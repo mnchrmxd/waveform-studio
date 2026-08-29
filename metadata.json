@@ -1,0 +1,6 @@
+{
+  "name": "Waveform Visualizer",
+  "description": "Generate, customize, play back, and export stunning audio waveforms, radial visualizers, and animated waveform videos from uploaded audio files.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
