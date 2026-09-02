@@ -18,9 +18,14 @@ import {
   Eye,
   EyeOff,
   MoveHorizontal,
+  Link2,
+  Loader2,
+  Check,
+  AlertCircle,
 } from 'lucide-react';
 import { ColorTheme, VisualizerSettings, WaveformStyle, BackgroundType, SideSymmetryType, ProfileImageShape } from '../types';
 import { COLOR_THEMES } from '../data/presets';
+import { loadImageFromUrl } from '../utils/imageLoader';
 
 interface ControlPanelProps {
   settings: VisualizerSettings;
@@ -29,12 +34,16 @@ interface ControlPanelProps {
   onThemeSelect: (themeId: string) => void;
   onBackgroundImageUpload: (image: HTMLImageElement | null) => void;
   backgroundImage: HTMLImageElement | null;
+  backgroundImageUrl?: string | null;
+  onBackgroundImageUrlChange?: (url: string | null) => void;
   backgroundBlur: number;
   onBackgroundBlurChange: (blur: number) => void;
   backgroundDim: number;
   onBackgroundDimChange: (dim: number) => void;
   profileImage?: HTMLImageElement | null;
+  profileImageUrl?: string | null;
   onProfileImageUpload?: (image: HTMLImageElement | null) => void;
+  onProfileImageUrlChange?: (url: string | null) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -44,14 +53,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onThemeSelect,
   onBackgroundImageUpload,
   backgroundImage,
+  backgroundImageUrl,
+  onBackgroundImageUrlChange,
   backgroundBlur,
   onBackgroundBlurChange,
   backgroundDim,
   onBackgroundDimChange,
   profileImage,
+  profileImageUrl,
   onProfileImageUpload,
+  onProfileImageUrlChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'style' | 'avatar' | 'colors' | 'geometry' | 'background' | 'overlays'>('style');
+
+  // Avatar URL State
+  const [avatarMode, setAvatarMode] = useState<'upload' | 'url'>('upload');
+  const [avatarUrlInput, setAvatarUrlInput] = useState(profileImageUrl || '');
+  const [isAvatarLoading, setIsAvatarLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  // Background Artwork URL State
+  const [bgMode, setBgMode] = useState<'upload' | 'url'>('upload');
+  const [bgUrlInput, setBgUrlInput] = useState(backgroundImageUrl || '');
+  const [isBgLoading, setIsBgLoading] = useState(false);
+  const [bgError, setBgError] = useState<string | null>(null);
 
   const visualizerStyles: { id: WaveformStyle; name: string; icon: React.ReactNode; desc: string }[] = [
     {
@@ -105,6 +130,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       img.src = URL.createObjectURL(file);
       img.onload = () => {
         onBackgroundImageUpload(img);
+        onBackgroundImageUrlChange?.(null);
       };
     }
   };
@@ -116,8 +142,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       img.src = URL.createObjectURL(file);
       img.onload = () => {
         onProfileImageUpload?.(img);
+        onProfileImageUrlChange?.(null);
         onSettingsChange({ showProfileImage: true });
       };
+    }
+  };
+
+  const handleLoadAvatarUrl = async (urlToLoad?: string) => {
+    const targetUrl = (urlToLoad || avatarUrlInput).trim();
+    if (!targetUrl) return;
+    setIsAvatarLoading(true);
+    setAvatarError(null);
+    try {
+      const img = await loadImageFromUrl(targetUrl);
+      onProfileImageUpload?.(img);
+      onProfileImageUrlChange?.(targetUrl);
+      onSettingsChange({ showProfileImage: true });
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to load avatar image from URL');
+    } finally {
+      setIsAvatarLoading(false);
+    }
+  };
+
+  const handleLoadBgUrl = async (urlToLoad?: string) => {
+    const targetUrl = (urlToLoad || bgUrlInput).trim();
+    if (!targetUrl) return;
+    setIsBgLoading(true);
+    setBgError(null);
+    try {
+      const img = await loadImageFromUrl(targetUrl);
+      onBackgroundImageUpload(img);
+      onBackgroundImageUrlChange?.(targetUrl);
+    } catch (err: any) {
+      setBgError(err?.message || 'Failed to load background image from URL');
+    } finally {
+      setIsBgLoading(false);
     }
   };
 
@@ -259,45 +319,172 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-neutral-200">
-                <input
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
                   id="toggle-profile-image"
-                  type="checkbox"
-                  checked={settings.showProfileImage}
-                  onChange={(e) => onSettingsChange({ showProfileImage: e.target.checked })}
-                  className="w-4 h-4 rounded accent-amber-400 cursor-pointer"
-                />
-                <span>Enable Avatar</span>
-              </label>
+                  onClick={() => onSettingsChange({ showProfileImage: !settings.showProfileImage })}
+                  className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors cursor-pointer focus:outline-none ${
+                    settings.showProfileImage ? 'bg-amber-500' : 'bg-neutral-800'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.showProfileImage}
+                >
+                  <span
+                    className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
+                      settings.showProfileImage ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`text-xs font-semibold ${settings.showProfileImage ? 'text-amber-400' : 'text-neutral-400'}`}>
+                  {settings.showProfileImage ? 'Avatar ON' : 'Avatar OFF'}
+                </span>
+              </div>
             </div>
 
             {settings.showProfileImage && (
-              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-neutral-800/80">
-                <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700">
-                  <ImageIcon className="w-4 h-4 text-amber-400" />
-                  <span>{profileImage ? 'Change Image...' : 'Upload Profile Picture...'}</span>
-                  <input
-                    id="profile-image-input"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleProfileFileChange}
-                    className="hidden"
-                  />
-                </label>
+              <div className="flex flex-col gap-3 pt-2 border-t border-neutral-800/80">
+                {/* Method selector: Upload File vs Image URL */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800">
+                    <button
+                      type="button"
+                      onClick={() => setAvatarMode('upload')}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                        avatarMode === 'upload'
+                          ? 'bg-neutral-800 text-white shadow-sm'
+                          : 'text-neutral-400 hover:text-neutral-200'
+                      }`}
+                    >
+                      Upload File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAvatarMode('url')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                        avatarMode === 'url'
+                          ? 'bg-neutral-800 text-white shadow-sm'
+                          : 'text-neutral-400 hover:text-neutral-200'
+                      }`}
+                    >
+                      <Link2 className="w-3 h-3 text-amber-400" />
+                      <span>Image URL</span>
+                    </button>
+                  </div>
 
-                {profileImage && (
-                  <button
-                    id="remove-profile-image-btn"
-                    onClick={() => onProfileImageUpload?.(null)}
-                    className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
-                  >
-                    Reset to Default Logo
-                  </button>
+                  {profileImage && (
+                    <button
+                      id="remove-profile-image-btn"
+                      onClick={() => {
+                        onProfileImageUpload?.(null);
+                        onProfileImageUrlChange?.(null);
+                      }}
+                      className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
+                    >
+                      Reset to Default Badge
+                    </button>
+                  )}
+                </div>
+
+                {avatarMode === 'upload' ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700">
+                      <ImageIcon className="w-4 h-4 text-amber-400" />
+                      <span>{profileImage ? 'Change Image...' : 'Upload Profile Picture...'}</span>
+                      <input
+                        id="profile-image-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfileFileChange}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <span className="text-[11px] text-neutral-400">
+                      {profileImage ? '✓ Custom picture loaded' : 'Using default studio badge'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="url"
+                          placeholder="https://example.com/avatar.png"
+                          value={avatarUrlInput}
+                          onChange={(e) => setAvatarUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleLoadAvatarUrl();
+                            }
+                          }}
+                          className="w-full bg-neutral-900 border border-neutral-800 focus:border-amber-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 font-mono"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadAvatarUrl()}
+                        disabled={isAvatarLoading || !avatarUrlInput.trim()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold rounded-lg text-xs transition-all cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        {isAvatarLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Link2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Load URL</span>
+                      </button>
+                    </div>
+
+                    {avatarError && (
+                      <div className="text-[11px] text-rose-400 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{avatarError}</span>
+                      </div>
+                    )}
+
+                    {/* Quick sample avatars */}
+                    <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 flex-wrap">
+                      <span className="text-neutral-500">Samples:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80';
+                          setAvatarUrlInput(u);
+                          handleLoadAvatarUrl(u);
+                        }}
+                        className="text-amber-400 hover:underline cursor-pointer"
+                      >
+                        Studio DJ
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=400&auto=format&fit=crop&q=80';
+                          setAvatarUrlInput(u);
+                          handleLoadAvatarUrl(u);
+                        }}
+                        className="text-amber-400 hover:underline cursor-pointer"
+                      >
+                        Vocal Mic
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=80';
+                          setAvatarUrlInput(u);
+                          handleLoadAvatarUrl(u);
+                        }}
+                        className="text-amber-400 hover:underline cursor-pointer"
+                      >
+                        Abstract
+                      </button>
+                    </div>
+                  </div>
                 )}
-
-                <span className="text-[11px] text-neutral-400 ml-auto">
-                  {profileImage ? '✓ Custom picture loaded' : 'Using default studio badge'}
-                </span>
               </div>
             )}
           </div>
@@ -461,6 +648,37 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </p>
                   </div>
                 )}
+
+                {/* Joint at Profile quick control */}
+                <div className="mt-2 pt-2 border-t border-neutral-800/80 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="avatar-profile-joint-toggle"
+                      type="checkbox"
+                      checked={settings.enableJoint && settings.jointAtProfile !== false}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        if (val) {
+                          onSettingsChange({ enableJoint: true, jointAtProfile: true });
+                        } else {
+                          onSettingsChange({ jointAtProfile: false });
+                        }
+                      }}
+                      className="w-4 h-4 rounded accent-cyan-400 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium text-neutral-200">Joint Tapering Next to Avatar</span>
+                      <span className="text-[10px] text-neutral-400">
+                        Bars feather smoothly to zero where they meet the profile boundary
+                      </span>
+                    </div>
+                  </div>
+                  {settings.enableJoint && settings.jointAtProfile !== false && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                      {settings.jointWidth ?? 48}px zone
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Shape, Size, Border & Reactive Effects */}
@@ -753,22 +971,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             />
           </div>
 
-          {/* Height Scale */}
+          {/* Audio Sensitivity & Max Height */}
           <div className="p-3 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col gap-1.5">
             <div className="flex justify-between items-center text-xs">
-              <span className="font-medium text-neutral-300">Amplitude Height Multiplier</span>
+              <span className="font-medium text-neutral-300">Audio Sensitivity & Max Height</span>
               <span className="font-mono text-cyan-400">{settings.heightScale}x</span>
             </div>
             <input
               id="height-scale-slider"
               type="range"
-              min="0.4"
-              max="2.0"
-              step="0.1"
+              min="0.2"
+              max="3.0"
+              step="0.05"
               value={settings.heightScale}
               onChange={(e) => onSettingsChange({ heightScale: parseFloat(e.target.value) })}
               className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
             />
+            <span className="text-[10px] text-neutral-500">Dynamic amplitude responsiveness and height reach across audio frequencies</span>
           </div>
 
           {/* Symmetry */}
@@ -795,25 +1014,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           </div>
 
-          {/* Max Bar Height Ceiling */}
-          <div className="p-3 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col gap-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-medium text-neutral-300">Max Bar Height Ceiling</span>
-              <span className="font-mono text-cyan-400">{settings.maxBarHeight ?? 85}%</span>
-            </div>
-            <input
-              id="max-bar-height-slider"
-              type="range"
-              min="20"
-              max="100"
-              step="5"
-              value={settings.maxBarHeight ?? 85}
-              onChange={(e) => onSettingsChange({ maxBarHeight: parseInt(e.target.value) })}
-              className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <span className="text-[10px] text-neutral-500">Limits maximum peak amplitude to prevent edge overflow</span>
-          </div>
-
           {/* Temporal Easing & Smoothing */}
           <div className="p-3 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col gap-1.5">
             <div className="flex justify-between items-center text-xs">
@@ -833,7 +1033,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <span className="text-[10px] text-neutral-500">Fast-attack buoyant decay filter for liquid easing</span>
           </div>
 
-          {/* Soft-Knee Peak Compression */}
+          {/* Soft-Knee Peak Saturation */}
           <div className="p-3 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col justify-center gap-1.5">
             <label className="flex items-center gap-2 cursor-pointer text-xs text-neutral-200">
               <input
@@ -843,11 +1043,139 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 onChange={(e) => onSettingsChange({ softKneeCompression: e.target.checked })}
                 className="w-4 h-4 rounded accent-cyan-400 cursor-pointer"
               />
-              <span className="font-medium text-neutral-300">Soft-Knee Dynamic Compression</span>
+              <span className="font-medium text-neutral-300">Soft-Knee Dynamic Saturation</span>
             </label>
             <p className="text-[10px] text-neutral-500">
               Smooths high-energy spikes using tanh curves to prevent harsh visual clipping
             </p>
+          </div>
+
+          {/* Waveform Edge & Profile Joint (Taper to Zero) Card */}
+          <div className="sm:col-span-2 md:col-span-3 p-3.5 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Split className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">Waveform Edge & Profile Joints</span>
+                    {settings.enableJoint && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/40">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    Smoothly tapers bar heights down to zero at canvas boundaries and next to profile
+                  </p>
+                </div>
+              </div>
+
+              {/* Master Toggle Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.enableJoint}
+                id="joint-enable-master-switch"
+                onClick={() => onSettingsChange({ enableJoint: !settings.enableJoint })}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  settings.enableJoint ? 'bg-cyan-500' : 'bg-neutral-800'
+                }`}
+                title={settings.enableJoint ? 'Disable bar joint effect' : 'Enable bar joint effect'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    settings.enableJoint ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.enableJoint && (
+              <div className="pt-2 border-t border-neutral-800/80 flex flex-col gap-3 animate-fadeIn">
+                {/* Checkboxes for where joint applies */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 p-2 rounded-lg bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 cursor-pointer hover:border-neutral-700">
+                    <input
+                      id="joint-at-ends-checkbox"
+                      type="checkbox"
+                      checked={settings.jointAtEnds !== false}
+                      onChange={(e) => onSettingsChange({ jointAtEnds: e.target.checked })}
+                      className="w-4 h-4 rounded accent-cyan-400 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-white">Joint at Canvas Ends</span>
+                      <span className="text-[10px] text-neutral-400">Tapers bars to zero at left and right edges</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-lg bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 cursor-pointer hover:border-neutral-700">
+                    <input
+                      id="joint-at-profile-checkbox"
+                      type="checkbox"
+                      checked={settings.jointAtProfile !== false}
+                      onChange={(e) => onSettingsChange({ jointAtProfile: e.target.checked })}
+                      className="w-4 h-4 rounded accent-cyan-400 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-white">Joint Next to Profile</span>
+                      <span className="text-[10px] text-neutral-400">Tapers bars smoothly into avatar border</span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Slider: Joint Width / Falloff Distance */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-300 font-medium">Joint Width (Falloff Zone)</span>
+                    <span className="font-mono text-cyan-400 font-semibold">{settings.jointWidth ?? 48}px</span>
+                  </div>
+                  <input
+                    id="joint-width-slider"
+                    type="range"
+                    min="12"
+                    max="160"
+                    step="4"
+                    value={settings.jointWidth ?? 48}
+                    onChange={(e) => onSettingsChange({ jointWidth: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  />
+                  <div className="flex justify-between text-[10px] text-neutral-500 font-mono">
+                    <span>12px (Sharp)</span>
+                    <span>48px (Balanced)</span>
+                    <span>160px (Broad Fade)</span>
+                  </div>
+                </div>
+
+                {/* Falloff Curve Type */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-neutral-300">Tapering Curve</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'smooth', label: 'Smooth (Hermite)', desc: 'Natural organic curve' },
+                      { id: 'linear', label: 'Linear', desc: 'Constant rate slope' },
+                      { id: 'cubic', label: 'Cubic Ease-In', desc: 'Steep bottom pinch' },
+                    ].map((curve) => (
+                      <button
+                        key={curve.id}
+                        id={`joint-curve-btn-${curve.id}`}
+                        type="button"
+                        onClick={() => onSettingsChange({ jointCurve: curve.id as 'smooth' | 'linear' | 'cubic' })}
+                        className={`p-2 rounded-lg border text-left flex flex-col gap-0.5 cursor-pointer transition-all ${
+                          (settings.jointCurve || 'smooth') === curve.id
+                            ? 'bg-neutral-800 border-cyan-400 text-white shadow-sm ring-1 ring-cyan-500/20'
+                            : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        }`}
+                      >
+                        <span className="text-xs font-semibold text-white">{curve.label}</span>
+                        <span className="text-[10px] text-neutral-400">{curve.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Radial specific controls */}
@@ -878,13 +1206,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           {/* Built-in Background Styles */}
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold text-neutral-300">Background Stage Theme</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
               {[
                 { id: 'dark-studio', name: 'Dark Studio' },
                 { id: 'oled-black', name: 'Pure OLED (#000)' },
                 { id: 'radial-spotlight', name: 'Neon Spotlight' },
                 { id: 'gradient-mesh', name: 'Ambient Mesh' },
                 { id: 'light-canvas', name: 'Light Canvas' },
+                { id: 'transparent', name: 'Transparent (Alpha)' },
               ].map((bg) => (
                 <button
                   key={bg.id}
@@ -907,11 +1236,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-neutral-200">Custom Background Artwork / Album Cover</span>
-                <p className="text-[11px] text-neutral-400">Upload any PNG/JPG image to render behind the visualizer</p>
+                <p className="text-[11px] text-neutral-400">Upload or provide a URL for artwork to render behind the visualizer</p>
               </div>
               {backgroundImage && (
                 <button
-                  onClick={() => onBackgroundImageUpload(null)}
+                  onClick={() => {
+                    onBackgroundImageUpload(null);
+                    onBackgroundImageUrlChange?.(null);
+                  }}
                   className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
                 >
                   Remove Image
@@ -919,22 +1251,134 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700">
-                <ImageIcon className="w-4 h-4 text-cyan-400" />
-                <span>Choose Image...</span>
-                <input
-                  id="background-image-input"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageFileChange}
-                  className="hidden"
-                />
-              </label>
+            {/* Method selector: Upload File vs Image URL */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setBgMode('upload')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                    bgMode === 'upload'
+                      ? 'bg-neutral-800 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBgMode('url')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                    bgMode === 'url'
+                      ? 'bg-neutral-800 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <Link2 className="w-3 h-3 text-cyan-400" />
+                  <span>Image URL</span>
+                </button>
+              </div>
+
               {backgroundImage && (
-                <span className="text-xs font-mono text-emerald-400">✓ Image loaded</span>
+                <span className="text-xs font-mono text-emerald-400 ml-auto">✓ Artwork active</span>
               )}
             </div>
+
+            {bgMode === 'upload' ? (
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700">
+                  <ImageIcon className="w-4 h-4 text-cyan-400" />
+                  <span>Choose Image File...</span>
+                  <input
+                    id="background-image-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="url"
+                      placeholder="https://example.com/album-artwork.jpg"
+                      value={bgUrlInput}
+                      onChange={(e) => setBgUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleLoadBgUrl();
+                        }
+                      }}
+                      className="w-full bg-neutral-900 border border-neutral-800 focus:border-cyan-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 font-mono"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLoadBgUrl()}
+                    disabled={isBgLoading || !bgUrlInput.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {isBgLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>Load URL</span>
+                  </button>
+                </div>
+
+                {bgError && (
+                  <div className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{bgError}</span>
+                  </div>
+                )}
+
+                {/* Quick sample wallpapers */}
+                <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 flex-wrap">
+                  <span className="text-neutral-500">Samples:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const u = 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1200&auto=format&fit=crop&q=80';
+                      setBgUrlInput(u);
+                      handleLoadBgUrl(u);
+                    }}
+                    className="text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    Cyber Grid
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const u = 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1200&auto=format&fit=crop&q=80';
+                      setBgUrlInput(u);
+                      handleLoadBgUrl(u);
+                    }}
+                    className="text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    Studio Noir
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const u = 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&auto=format&fit=crop&q=80';
+                      setBgUrlInput(u);
+                      handleLoadBgUrl(u);
+                    }}
+                    className="text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    Neon Stage
+                  </button>
+                </div>
+              </div>
+            )}
 
             {backgroundImage && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">

@@ -7,6 +7,12 @@ import {
   AlertCircle,
   RotateCcw,
   Clock,
+  Layers,
+  FileArchive,
+  Info,
+  Server,
+  Code2,
+  Terminal,
 } from 'lucide-react';
 import {
   fastVideoExporter,
@@ -17,42 +23,53 @@ import {
   ExportFormat,
 } from '../services/fastVideoExporter';
 import { ColorTheme, VisualizerSettings, WaveformData } from '../types';
+import { PayloadGeneratorModal } from './PayloadGeneratorModal';
 
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   audioBuffer: AudioBuffer | null;
+  audioUrl?: string | null;
   waveformData: WaveformData | null;
   settings: VisualizerSettings;
   theme: ColorTheme;
   trimStart: number;
   trimEnd: number;
   backgroundImage?: HTMLImageElement | null;
+  backgroundImageUrl?: string | null;
   backgroundBlur?: number;
   backgroundDim?: number;
   profileImage?: HTMLImageElement | null;
+  profileImageUrl?: string | null;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
   audioBuffer,
+  audioUrl,
   waveformData,
   settings,
   theme,
   trimStart,
   trimEnd,
   backgroundImage,
+  backgroundImageUrl,
   backgroundBlur,
   backgroundDim,
   profileImage,
+  profileImageUrl,
 }) => {
   const [resolution, setResolution] = useState<ExportResolution>('1080p');
   const [format, setFormat] = useState<ExportFormat>('mp4');
+  const [exportAlpha, setExportAlpha] = useState<boolean>(
+    settings.backgroundType === 'transparent'
+  );
   const [fps, setFps] = useState<30 | 60>(60);
   const [videoBitrate, setVideoBitrate] = useState<number>(8_000_000); // 8 Mbps
   const [audioBitrate] = useState<number>(192_000); // 192 kbps
   const [useTrim, setUseTrim] = useState<boolean>(false);
+  const [isPayloadModalOpen, setIsPayloadModalOpen] = useState<boolean>(false);
 
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
@@ -65,8 +82,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       setProgress(null);
       setErrorMessage(null);
       setIsExporting(false);
+      const isInitialAlpha = settings.backgroundType === 'transparent';
+      setExportAlpha(isInitialAlpha);
+      if (isInitialAlpha) {
+        setFormat('webm-alpha');
+      } else {
+        setFormat('mp4');
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, settings.backgroundType]);
 
   if (!isOpen) return null;
 
@@ -79,6 +103,51 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const getExportDimensions = () => {
+    const aspect = settings.aspectRatio || '16:9';
+    const is1080p = resolution === '1080p';
+    const is4k = resolution === '4k';
+    const is720p = resolution === '720p';
+
+    if (aspect === '9:16') {
+      if (is4k) return { width: 2160, height: 3840 };
+      if (is720p) return { width: 720, height: 1280 };
+      return { width: 1080, height: 1920 };
+    }
+
+    if (aspect === '1:1') {
+      if (is4k) return { width: 2160, height: 2160 };
+      if (is720p) return { width: 720, height: 720 };
+      return { width: 1080, height: 1080 };
+    }
+
+    if (aspect === '21:9') {
+      if (is4k) return { width: 3840, height: 1646 };
+      if (is720p) return { width: 1680, height: 720 };
+      return { width: 2560, height: 1080 };
+    }
+
+    if (is4k) return { width: 3840, height: 2160 };
+    if (is720p) return { width: 1280, height: 720 };
+    return { width: 1920, height: 1080 };
+  };
+
+  const handleToggleAlpha = () => {
+    const next = !exportAlpha;
+    setExportAlpha(next);
+    if (next) {
+      // Switching to alpha mode: default to WebM Alpha
+      if (format === 'mp4' || format === 'webm') {
+        setFormat('webm-alpha');
+      }
+    } else {
+      // Switching to standard mode: default to MP4
+      if (format === 'webm-alpha' || format === 'png-sequence') {
+        setFormat('mp4');
+      }
+    }
   };
 
   const handleStartExport = async () => {
@@ -94,13 +163,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       videoBitrate,
       audioBitrate,
       format,
+      exportAlpha,
       trimStart: activeStart,
       trimEnd: activeEnd,
-      settings,
+      settings: exportAlpha ? { ...settings, backgroundType: 'transparent' } : settings,
       theme,
-      backgroundImage,
-      backgroundBlur,
-      backgroundDim,
+      backgroundImage: exportAlpha ? null : backgroundImage,
+      backgroundBlur: exportAlpha ? 0 : backgroundBlur,
+      backgroundDim: exportAlpha ? 0 : backgroundDim,
       profileImage,
     };
 
@@ -139,9 +209,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     document.body.removeChild(a);
   };
 
+  const isZipExport = exportResult?.fileName.endsWith('.zip');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-xl bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-3xl bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-900/60">
           <div className="flex items-center gap-2.5">
@@ -149,8 +221,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Zap className="w-4 h-4 fill-current" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-base text-white">Fast Headless Video Export</h2>
-              <p className="text-xs text-neutral-400">Offline WebCodecs hardware-accelerated MP4 rendering</p>
+              <h2 className="font-display font-bold text-base text-white">Video & Alpha Export Studio</h2>
+              <p className="text-xs text-neutral-400">
+                Hardware-accelerated MP4, WebM Alpha, and Headless REST API video generation
+              </p>
             </div>
           </div>
 
@@ -167,90 +241,196 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto flex flex-col gap-4">
-          {/* STATE 1: Configuration Form */}
+          {/* Configuration Form */}
           {!isExporting && !exportResult && (
             <>
-              {/* Speed Highlight Banner */}
-              <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-950/40 via-indigo-950/30 to-neutral-900 border border-cyan-500/20 flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0">
-                  <Zap className="w-5 h-5" />
-                </div>
-                <div className="text-xs">
-                  <div className="font-semibold text-cyan-300">Blazing Fast Headless Processing</div>
-                  <div className="text-neutral-400">
-                    Frames are rasterized headlessly with zero UI delay and strictly bounded memory.
+              {/* Alpha Transparency Toggle Card */}
+              <div
+                id="toggle-alpha-export-card"
+                onClick={handleToggleAlpha}
+                className={`p-3.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  exportAlpha
+                    ? 'bg-neutral-900 border-cyan-400/80 ring-2 ring-cyan-500/20 shadow-md shadow-cyan-500/10'
+                    : 'bg-neutral-900/50 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                      exportAlpha
+                        ? 'transparency-checkerboard border border-cyan-400 text-cyan-300 shadow-sm'
+                        : 'bg-neutral-800 text-neutral-400'
+                    }`}
+                  >
+                    <Layers className="w-5 h-5" />
                   </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>Transparent Background (Alpha Channel)</span>
+                      {exportAlpha && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/40">
+                          ALPHA ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-neutral-400">
+                      Renders transparent overlay for Premiere Pro, DaVinci Resolve, Final Cut & OBS
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${
+                    exportAlpha ? 'bg-cyan-500' : 'bg-neutral-800'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                      exportAlpha ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </div>
               </div>
 
-              {/* Format & Aspect Ratio */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-neutral-300">Format</label>
-                  <div className="flex items-center gap-2 p-1 bg-neutral-900 rounded-xl border border-neutral-800">
+              {/* Format Selection based on Alpha state */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-neutral-300">
+                    Export Output Format
+                  </label>
+                  {exportAlpha && (
+                    <span className="text-[11px] font-mono text-cyan-400">
+                      Alpha Transparency Enabled
+                    </span>
+                  )}
+                </div>
+
+                {exportAlpha ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      id="format-webm-alpha-btn"
+                      onClick={() => setFormat('webm-alpha')}
+                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                        format === 'webm-alpha'
+                          ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-white">WebM Video (Alpha)</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                          Direct Video
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-neutral-400">
+                        Single video file with embedded alpha. Plays transparently in OBS & web browsers.
+                      </span>
+                    </button>
+
+                    <button
+                      id="format-png-sequence-btn"
+                      onClick={() => setFormat('png-sequence')}
+                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                        format === 'png-sequence'
+                          ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-white">PNG Sequence (.zip)</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
+                          Universal NLE
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-neutral-400">
+                        100% Lossless RGBA frames + audio.wav. Native import in Premiere, DaVinci & Final Cut.
+                      </span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       id="format-mp4-btn"
                       onClick={() => setFormat('mp4')}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
                         format === 'mp4'
-                          ? 'bg-cyan-500 text-black shadow-sm font-bold'
-                          : 'text-neutral-400 hover:text-white'
+                          ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      MP4 (H.264)
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-white">MP4 (H.264)</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800">
+                          Universal
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-neutral-400">
+                        Compatible with YouTube, Instagram, TikTok, smartphones, and all video players.
+                      </span>
                     </button>
+
                     <button
                       id="format-webm-btn"
                       onClick={() => setFormat('webm')}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
                         format === 'webm'
-                          ? 'bg-cyan-500 text-black shadow-sm font-bold'
-                          : 'text-neutral-400 hover:text-white'
+                          ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      WebM (VP9)
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-white">WebM (VP9)</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800">
+                          Modern Web
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-neutral-400">
+                        High-efficiency open web video format with superior compression.
+                      </span>
                     </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Resolution & Aspect Ratio */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-neutral-300">Resolution</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: '720p', label: '720p', desc: 'Fast' },
+                      { id: '1080p', label: '1080p', desc: 'Crisp' },
+                      { id: '4k', label: '4K', desc: 'Ultra' },
+                    ].map((res) => (
+                      <button
+                        key={res.id}
+                        id={`resolution-btn-${res.id}`}
+                        onClick={() => setResolution(res.id as ExportResolution)}
+                        className={`py-2 px-1.5 rounded-xl border text-center flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
+                          resolution === res.id
+                            ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20'
+                            : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        }`}
+                      >
+                        <span className="font-semibold text-xs text-white">{res.label}</span>
+                        <span className="text-[9px] text-neutral-400">{res.desc}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-neutral-300">Aspect Ratio</label>
-                  <div className="p-2 bg-neutral-900 rounded-xl border border-neutral-800 text-xs font-mono text-cyan-400 flex items-center justify-between">
+                  <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800 text-xs font-mono text-cyan-400 flex items-center justify-between h-[52px]">
                     <span className="font-semibold">{settings.aspectRatio}</span>
                     <span className="text-[11px] text-neutral-400 font-sans">
                       {settings.aspectRatio === '9:16'
                         ? 'TikTok/Reels'
                         : settings.aspectRatio === '1:1'
                         ? 'Instagram'
-                        : 'YouTube 16:9'}
+                        : 'Landscape 16:9'}
                     </span>
                   </div>
-                </div>
-              </div>
-
-              {/* Resolution Selection */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Resolution</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: '720p', label: '720p HD', desc: 'Ultra Fast' },
-                    { id: '1080p', label: '1080p FHD', desc: 'Crisp (Recommended)' },
-                    { id: '4k', label: '4K Ultra', desc: 'Highest Detail' },
-                  ].map((res) => (
-                    <button
-                      key={res.id}
-                      id={`resolution-btn-${res.id}`}
-                      onClick={() => setResolution(res.id as ExportResolution)}
-                      className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition-all cursor-pointer ${
-                        resolution === res.id
-                          ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20'
-                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
-                      }`}
-                    >
-                      <span className="font-semibold text-xs text-white">{res.label}</span>
-                      <span className="text-[10px] text-neutral-400">{res.desc}</span>
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -264,7 +444,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       onClick={() => setFps(60)}
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                         fps === 60
-                          ? 'bg-neutral-800 text-cyan-400 border border-neutral-700'
+                          ? 'bg-neutral-800 text-cyan-400 border border-neutral-700 shadow-sm font-bold'
                           : 'text-neutral-400 hover:text-white'
                       }`}
                     >
@@ -275,7 +455,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       onClick={() => setFps(30)}
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                         fps === 30
-                          ? 'bg-neutral-800 text-cyan-400 border border-neutral-700'
+                          ? 'bg-neutral-800 text-cyan-400 border border-neutral-700 shadow-sm font-bold'
                           : 'text-neutral-400 hover:text-white'
                       }`}
                     >
@@ -340,13 +520,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <div className="flex flex-col items-center justify-center py-6 gap-5 animate-fadeIn text-center">
               {/* Pulse Speed Indicator */}
               <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 animate-pulse">
-                  <Zap className="w-10 h-10" />
+                <div
+                  className={`w-20 h-20 rounded-2xl flex items-center justify-center animate-pulse ${
+                    exportAlpha ? 'transparency-checkerboard border-2 border-cyan-400 text-cyan-300' : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-400'
+                  }`}
+                >
+                  {format === 'png-sequence' ? (
+                    <FileArchive className="w-10 h-10" />
+                  ) : (
+                    <Zap className="w-10 h-10" />
+                  )}
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
-                <h3 className="font-display font-bold text-lg text-white">Headless Video Rendering</h3>
+                <h3 className="font-display font-bold text-lg text-white">
+                  {format === 'png-sequence'
+                    ? 'Rasterizing Transparent PNG Sequence'
+                    : exportAlpha
+                    ? 'Rendering Transparent Alpha Video'
+                    : 'Headless Video Rendering'}
+                </h3>
                 <p className="text-xs text-cyan-400 font-mono">
                   {progress.speedMultiplier > 0
                     ? `⚡ ${progress.fps} FPS (${progress.speedMultiplier}x faster than real-time)`
@@ -383,7 +577,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           )}
 
-          {/* STATE 3: Completed View with Video Preview & Download */}
+          {/* STATE 3: Completed View with Video Preview / Archive Info & Download */}
           {!isExporting && exportResult && (
             <div className="flex flex-col gap-4 animate-fadeIn">
               {/* Success Badge */}
@@ -391,7 +585,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                   <div>
-                    <div className="font-bold text-xs text-emerald-300">Video Rendered Successfully!</div>
+                    <div className="font-bold text-xs text-emerald-300">
+                      {isZipExport
+                        ? 'Transparent PNG Sequence Archive Ready!'
+                        : exportAlpha
+                        ? 'Transparent Alpha Video Rendered Successfully!'
+                        : 'Video Rendered Successfully!'}
+                    </div>
                     <div className="text-[11px] text-neutral-400">
                       Rendered in {exportResult.renderTimeSec}s at {exportResult.averageFps} FPS ({exportResult.speedRatio}x speed)
                     </div>
@@ -403,16 +603,63 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               </div>
 
-              {/* Video Player Preview */}
-              <div className="relative rounded-xl overflow-hidden bg-black border border-neutral-800 shadow-xl max-h-[300px] flex items-center justify-center">
-                <video
-                  src={exportResult.url}
-                  controls
-                  autoPlay
-                  loop
-                  className="w-full max-h-[300px] object-contain block"
-                />
-              </div>
+              {/* Video Player Preview or ZIP Archive Card */}
+              {isZipExport ? (
+                <div className="p-4 rounded-xl bg-neutral-900/80 border border-neutral-800 flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-purple-950/80 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                      <FileArchive className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-white">ZIP Image Sequence Archive</div>
+                      <div className="text-xs text-neutral-400 font-mono">
+                        {exportResult.totalFrames} frames • {exportResult.width}×{exportResult.height} • + audio.wav
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px] text-neutral-300 flex flex-col gap-1.5 leading-relaxed">
+                    <div className="font-semibold text-cyan-400 flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5" />
+                      <span>How to import into video editors:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-neutral-400">
+                      <li>
+                        <strong className="text-neutral-200">Premiere Pro:</strong> File &gt; Import &gt; Click first PNG &gt; Check &apos;Image Sequence&apos; box.
+                      </li>
+                      <li>
+                        <strong className="text-neutral-200">DaVinci Resolve:</strong> Drag the extracted frames folder straight into the Media Pool.
+                      </li>
+                      <li>
+                        <strong className="text-neutral-200">Audio Sync:</strong> Place the bundled &apos;audio.wav&apos; on an audio track below the video.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div
+                    className={`relative rounded-xl overflow-hidden border border-neutral-800 shadow-xl max-h-[280px] flex items-center justify-center ${
+                      exportAlpha ? 'transparency-checkerboard' : 'bg-black'
+                    }`}
+                  >
+                    <video
+                      src={exportResult.url}
+                      controls
+                      autoPlay
+                      loop
+                      className="w-full max-h-[280px] object-contain block"
+                    />
+                  </div>
+
+                  {exportAlpha && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-cyan-400/90 font-mono px-1">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      <span>Alpha channel active: Checkerboard pattern indicates transparent pixels.</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center gap-3 pt-2">
@@ -431,14 +678,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/25 transition-all cursor-pointer flex items-center justify-center gap-2 ring-1 ring-white/20"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download {exportResult.fileName.endsWith('.mp4') ? 'MP4' : 'Video'}</span>
+                  <span>
+                    Download {isZipExport ? 'PNG Sequence (.ZIP)' : exportAlpha ? 'WebM Alpha Video' : 'Video File'}
+                  </span>
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Modal Footer (only on config screen) */}
+        {/* Modal Footer */}
         {!isExporting && !exportResult && (
           <div className="px-5 py-4 border-t border-neutral-800 bg-neutral-900/60 flex items-center justify-between gap-3">
             <div className="text-xs text-neutral-400 font-mono">
@@ -456,18 +705,66 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 Cancel
               </button>
 
+              {/* Payload Generator Button next to Render */}
+              <button
+                id="open-payload-generator-btn"
+                type="button"
+                onClick={() => setIsPayloadModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white font-medium text-xs border border-neutral-700/80 hover:border-cyan-500/50 transition-all cursor-pointer"
+                title="View headless cURL / JSON / Node payload for this visualizer"
+              >
+                <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Payload Generator</span>
+              </button>
+
               <button
                 id="start-headless-export-btn"
                 onClick={handleStartExport}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 transition-all cursor-pointer ring-1 ring-cyan-400/30"
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 transition-all cursor-pointer ring-1 ring-cyan-400/30 active:scale-[0.98]"
               >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>Start Fast Export</span>
+                {format === 'png-sequence' ? (
+                  <FileArchive className="w-4 h-4" />
+                ) : (
+                  <Zap className="w-4 h-4 fill-current" />
+                )}
+                <span>
+                  {format === 'png-sequence'
+                    ? 'Export PNG Sequence'
+                    : exportAlpha
+                    ? 'Export Alpha Video'
+                    : 'Render'}
+                </span>
               </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Payload Generator Modal */}
+      {isPayloadModalOpen && (
+        <PayloadGeneratorModal
+          isOpen={isPayloadModalOpen}
+          onClose={() => setIsPayloadModalOpen(false)}
+          settings={exportAlpha ? { ...settings, backgroundType: 'transparent' } : settings}
+          theme={theme}
+          exportConfig={{
+            width: getExportDimensions().width,
+            height: getExportDimensions().height,
+            fps,
+            format: format === 'webm-alpha' || format === 'webm' ? 'webm' : 'mp4',
+            duration: exportDuration,
+            trimStart: activeStart,
+            trimEnd: activeEnd,
+            useTrim,
+          }}
+          audioBuffer={audioBuffer}
+          audioUrl={audioUrl}
+          profileImage={profileImage}
+          profileImageUrl={profileImageUrl}
+          backgroundImage={backgroundImage}
+          backgroundImageUrl={backgroundImageUrl}
+        />
+      )}
     </div>
   );
 };

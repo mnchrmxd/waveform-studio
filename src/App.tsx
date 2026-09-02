@@ -6,6 +6,7 @@ import { ControlPanel } from './components/ControlPanel';
 import { ExportModal } from './components/ExportModal';
 import { DemoTracksModal } from './components/DemoTracksModal';
 import { RecordMicModal } from './components/RecordMicModal';
+import { AudioUrlModal } from './components/AudioUrlModal';
 import { audioEngine } from './services/audioEngine';
 import { AudioMetadata, ColorTheme, SampleAudioPreset, VisualizerSettings, WaveformData, AspectRatioType } from './types';
 import { COLOR_THEMES, DEFAULT_SETTINGS } from './data/presets';
@@ -13,6 +14,7 @@ import { loadDefaultAvatarImage } from './utils/defaultAvatar';
 
 export default function App() {
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [waveformData, setWaveformData] = useState<WaveformData | null>(null);
   const [metadata, setMetadata] = useState<AudioMetadata | null>(null);
 
@@ -30,15 +32,18 @@ export default function App() {
   const [trimEnd, setTrimEnd] = useState<number>(0);
 
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(10);
   const [backgroundDim, setBackgroundDim] = useState<number>(0.6);
 
   const [profileImage, setProfileImage] = useState<HTMLImageElement | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
   // Modals
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState<boolean>(false);
+  const [isAudioUrlModalOpen, setIsAudioUrlModalOpen] = useState<boolean>(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +133,7 @@ export default function App() {
       }
       const result = await audioEngine.decodeAudioFile(file);
       setAudioBuffer(result.buffer);
+      setAudioUrl(null);
       setWaveformData(result.waveform);
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
@@ -147,6 +153,35 @@ export default function App() {
     }
   };
 
+  const handleLoadAudioUrl = async (url: string) => {
+    setIsLoadingAudio(true);
+    try {
+      if (isPlaying) {
+        audioEngine.pause();
+      }
+      const result = await audioEngine.loadAudioFromUrl(url);
+      setAudioBuffer(result.buffer);
+      setAudioUrl(url);
+      setWaveformData(result.waveform);
+      setMetadata(result.metadata);
+      setDuration(result.buffer.duration);
+      setCurrentTime(0);
+      setTrimStart(0);
+      setTrimEnd(result.buffer.duration);
+      setSettings((prev) => ({
+        ...prev,
+        trackTitle: result.metadata.fileName,
+        artistName: 'Remote Audio Stream',
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load audio from URL';
+      console.error('Audio URL loading failed:', err);
+      throw new Error(msg);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  };
+
   const handleSelectPreset = async (preset: SampleAudioPreset) => {
     setIsLoadingAudio(true);
     try {
@@ -155,6 +190,7 @@ export default function App() {
       }
       const result = await audioEngine.generateDemoTrack(preset.id);
       setAudioBuffer(result.buffer);
+      setAudioUrl(null);
       setWaveformData(result.waveform);
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
@@ -179,6 +215,7 @@ export default function App() {
       audioEngine.pause();
     }
     setAudioBuffer(data.buffer);
+    setAudioUrl(null);
     setWaveformData(data.waveform);
     setMetadata(data.metadata);
     setDuration(data.buffer.duration);
@@ -270,6 +307,7 @@ export default function App() {
         onDemoClick={() => setIsDemoModalOpen(true)}
         onRecordClick={() => setIsRecordModalOpen(true)}
         onExportClick={() => setIsExportModalOpen(true)}
+        onUrlAudioClick={() => setIsAudioUrlModalOpen(true)}
         isExportDisabled={!audioBuffer}
       />
 
@@ -292,6 +330,8 @@ export default function App() {
             profileImage={profileImage}
             onAspectRatioChange={handleAspectRatioChange}
             onDropAudioFile={handleFileUpload}
+            onToggleProfile={() => handleSettingsChange({ showProfileImage: !settings.showProfileImage })}
+            onToggleJoint={() => handleSettingsChange({ enableJoint: !settings.enableJoint })}
           />
 
           {/* Audio Playback Timeline & Transport Controls */}
@@ -330,12 +370,16 @@ export default function App() {
             onThemeSelect={handleThemeSelect}
             onBackgroundImageUpload={setBackgroundImage}
             backgroundImage={backgroundImage}
+            backgroundImageUrl={backgroundImageUrl}
+            onBackgroundImageUrlChange={setBackgroundImageUrl}
             backgroundBlur={backgroundBlur}
             onBackgroundBlurChange={setBackgroundBlur}
             backgroundDim={backgroundDim}
             onBackgroundDimChange={setBackgroundDim}
             profileImage={profileImage}
+            profileImageUrl={profileImageUrl}
             onProfileImageUpload={setProfileImage}
+            onProfileImageUrlChange={setProfileImageUrl}
           />
         </section>
       </main>
@@ -345,15 +389,18 @@ export default function App() {
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         audioBuffer={audioBuffer}
+        audioUrl={audioUrl}
         waveformData={waveformData}
         settings={settings}
         theme={theme}
         trimStart={trimStart}
         trimEnd={trimEnd}
         backgroundImage={backgroundImage}
+        backgroundImageUrl={backgroundImageUrl}
         backgroundBlur={backgroundBlur}
         backgroundDim={backgroundDim}
         profileImage={profileImage}
+        profileImageUrl={profileImageUrl}
       />
 
       {/* Demo Tracks Modal */}
@@ -369,6 +416,14 @@ export default function App() {
         isOpen={isRecordModalOpen}
         onClose={() => setIsRecordModalOpen(false)}
         onRecordingComplete={handleRecordingComplete}
+      />
+
+      {/* Remote Audio URL Modal */}
+      <AudioUrlModal
+        isOpen={isAudioUrlModalOpen}
+        onClose={() => setIsAudioUrlModalOpen(false)}
+        onLoadUrl={handleLoadAudioUrl}
+        isLoading={isLoadingAudio}
       />
     </div>
   );

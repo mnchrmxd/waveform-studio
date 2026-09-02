@@ -253,7 +253,7 @@ export class OfflineAudioAnalyzer {
     targetBands: number = 128,
     smoothing: number = 0.65,
     softKnee: boolean = true,
-    maxHeightCapRatio: number = 1.0
+    sensitivity: number = 1.0
   ): SpectrumData {
     this.prepareBandMappings(targetBands);
 
@@ -310,19 +310,17 @@ export class OfflineAudioAnalyzer {
       this.outFrequencies.set(this.scratchFrequencies);
     }
 
-    // 3. Soft-Knee Compression & Max Height Cap
-    const cap = Math.max(0.1, Math.min(1.0, maxHeightCapRatio));
+    // 3. Dynamic Sensitivity & Analog Soft-Knee Saturation (Smooth natural curves without hard plateau caps)
+    const sens = Math.max(0.1, sensitivity || 1.0);
     for (let b = 0; b < targetBands; b++) {
-      let val = this.outFrequencies[b];
+      let val = this.outFrequencies[b] * sens;
 
-      // Soft-knee elasticity: prevents harsh plateau clipping at high volumes
-      if (softKnee && val > 0.68) {
-        const excess = val - 0.68;
-        val = 0.68 + Math.tanh(excess * 1.8) * 0.32;
+      // Soft-saturation curve: compresses peaks smoothly with hyperbolic tangent, avoiding flat ceiling truncations
+      if (softKnee) {
+        val = Math.tanh(val * 0.92) * 1.12;
       }
 
-      // Max ceiling clamp with smooth threshold
-      this.outFrequencies[b] = Math.min(cap, val * cap);
+      this.outFrequencies[b] = Math.max(0.01, Math.min(1.0, val));
     }
 
     // Audio-reactive band energies

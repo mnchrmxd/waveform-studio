@@ -121,8 +121,8 @@ export const DEFAULT_SETTINGS: VisualizerSettings = {
   barWidthRatio: 0.7,
   barGap: 3,
   barRadius: 4,
-  heightScale: 1.0,
-  maxBarHeight: 100, // 100% max height
+  heightScale: 1.0, // 1.0x baseline scale
+  sensitivity: 1.0, // 1.0x dynamic sensitivity response
   softKneeCompression: true,
   symmetry: 'mirror',
   smoothing: 0.65, // silky smooth fluid easing
@@ -152,6 +152,13 @@ export const DEFAULT_SETTINGS: VisualizerSettings = {
   profileGlow: true,
   sideSymmetry: 'mirrored-flank',
   profileWingGap: 16, // px gap between profile and wings (supports 0 for continuous edge)
+
+  // Joint / Edge & Profile Tapering
+  enableJoint: true,
+  jointAtEnds: true,
+  jointAtProfile: true,
+  jointWidth: 16, // 16% smooth falloff distance
+  jointCurve: 'smooth',
 
   // Overlays
   showTimeRuler: true,

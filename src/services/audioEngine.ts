@@ -46,6 +46,25 @@ class AudioEngine {
     return this.decodeArrayBuffer(arrayBuffer, file.name, file.size, file.type || 'audio/mpeg');
   }
 
+  public async loadAudioFromUrl(url: string): Promise<{ buffer: AudioBuffer; metadata: AudioMetadata; waveform: WaveformData }> {
+    let response: Response;
+    try {
+      response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch {
+      // Fallback via server proxy for cross-origin URLs
+      response = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load audio from URL: HTTP ${response.status}`);
+      }
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const cleanUrl = url.split('?')[0];
+    const fileName = cleanUrl.split('/').pop() || 'Remote Audio Track';
+    const contentType = response.headers.get('content-type') || 'audio/mpeg';
+    return this.decodeArrayBuffer(arrayBuffer, decodeURIComponent(fileName), arrayBuffer.byteLength, contentType);
+  }
+
   public async decodeArrayBuffer(
     arrayBuffer: ArrayBuffer,
     fileName: string = 'Audio Track',

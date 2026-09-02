@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Maximize2, Minimize2, Image as ImageIcon, Sparkles, RefreshCw } from 'lucide-react';
+import { Maximize2, Minimize2, Image as ImageIcon, Sparkles, RefreshCw, User, Split } from 'lucide-react';
 import { AspectRatioType, ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { OfflineAudioAnalyzer, SpectrumData } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
@@ -20,6 +20,8 @@ interface VisualizerCanvasProps {
   profileImage?: HTMLImageElement | null;
   onAspectRatioChange: (aspect: AspectRatioType) => void;
   onDropAudioFile?: (file: File) => void;
+  onToggleProfile?: () => void;
+  onToggleJoint?: () => void;
 }
 
 export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
@@ -37,6 +39,8 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
   profileImage,
   onAspectRatioChange,
   onDropAudioFile,
+  onToggleProfile,
+  onToggleJoint,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -105,7 +109,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
 
       const targetBands = settings.barCount || 120;
       const rawFrequencies = new Float32Array(targetBands);
-      const maxCap = Math.max(0.1, Math.min(1.0, (settings.maxBarHeight ?? 100) / 100));
+      const sens = (settings.heightScale || 1.0) * (settings.sensitivity || 1.0);
 
       let bassSum = 0;
       let midSum = 0;
@@ -118,19 +122,18 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
       for (let i = 0; i < targetBands; i++) {
         const frac = (i + 1) / targetBands;
         const bin = Math.min(binCount - 1, Math.max(1, Math.floor(Math.pow(frac, 1.85) * (binCount * 0.75))));
-        let val = (freqArray[bin] / 255) * 1.3;
+        let val = (freqArray[bin] / 255) * 1.35 * sens;
 
         // Equal-loudness tilt for musical balance
-        const freqWeight = 1.0 + Math.sqrt(i / targetBands) * 0.6;
+        const freqWeight = 1.0 + Math.sqrt(i / targetBands) * 0.55;
         val *= freqWeight;
 
-        // Soft-knee compression if enabled
+        // Soft-knee analog saturation: smooth compression curve without hard plateau clipping
         if (settings.softKneeCompression !== false) {
-          val = Math.tanh(val * 1.15) * 1.05;
+          val = Math.tanh(val * 0.92) * 1.12;
         }
 
-        // Apply maxBarHeight ceiling
-        val = Math.min(maxCap, val);
+        val = Math.max(0.01, Math.min(1.0, val));
 
         rawFrequencies[i] = val;
 
@@ -168,9 +171,9 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
       spectrum = analyzerRef.current.getSpectrumAtTime(
         currentTime,
         settings.barCount || 120,
-        settings.smoothing,
-        settings.softKneeCompression,
-        (settings.maxBarHeight ?? 100) / 100
+        settings.smoothing ?? 0.65,
+        settings.softKneeCompression !== false,
+        (settings.heightScale || 1.0) * (settings.sensitivity || 1.0)
       );
     } else {
       // Empty mock placeholder spectrum if no audio is loaded yet
@@ -311,8 +314,56 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
           ))}
         </div>
 
-        {/* Action Controls: Fullscreen */}
+        {/* Action Controls: Profile Toggle, Live Indicator & Fullscreen */}
         <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Quick Avatar Toggle directly on Preview Stage */}
+          {onToggleProfile && (
+            <button
+              id="preview-quick-toggle-avatar-btn"
+              onClick={onToggleProfile}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-all shadow-lg cursor-pointer border ${
+                settings.showProfileImage
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30'
+                  : 'bg-neutral-900/80 text-neutral-400 border-neutral-800 hover:text-neutral-200 hover:bg-neutral-800'
+              }`}
+              title={settings.showProfileImage ? 'Click to hide profile in preview' : 'Click to show profile in preview'}
+            >
+              <User className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                Profile:{' '}
+                <strong className={settings.showProfileImage ? 'text-amber-300 font-bold' : 'text-neutral-500'}>
+                  {settings.showProfileImage ? 'ON' : 'OFF'}
+                </strong>
+              </span>
+            </button>
+          )}
+
+          {/* Quick Joint Toggle directly on Preview Stage */}
+          {onToggleJoint && (
+            <button
+              id="preview-quick-toggle-joint-btn"
+              onClick={onToggleJoint}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-all shadow-lg cursor-pointer border ${
+                settings.enableJoint
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-500/30'
+                  : 'bg-neutral-900/80 text-neutral-400 border-neutral-800 hover:text-neutral-200 hover:bg-neutral-800'
+              }`}
+              title={
+                settings.enableJoint
+                  ? 'Joint Active: Bars taper smoothly to zero at ends & profile boundaries'
+                  : 'Joint Inactive: Click to enable tapering bars to zero at ends & profile'
+              }
+            >
+              <Split className="w-3.5 h-3.5 text-cyan-400" />
+              <span>
+                Joint:{' '}
+                <strong className={settings.enableJoint ? 'text-cyan-300 font-bold' : 'text-neutral-500'}>
+                  {settings.enableJoint ? 'ON' : 'OFF'}
+                </strong>
+              </span>
+            </button>
+          )}
+
           {/* Live / Paused Status Indicator */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900/80 backdrop-blur-md border border-neutral-800 text-xs font-medium text-neutral-300 shadow-lg">
             <span
@@ -349,7 +400,9 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
         style={{ minHeight: '360px' }}
       >
         <div
-          className="relative w-full max-w-full flex items-center justify-center rounded-xl overflow-hidden shadow-2xl transition-all"
+          className={`relative w-full max-w-full flex items-center justify-center rounded-xl overflow-hidden shadow-2xl transition-all ${
+            settings.backgroundType === 'transparent' ? 'transparency-checkerboard' : ''
+          }`}
           style={getAspectRatioContainerStyle()}
         >
           <canvas

@@ -42,9 +42,9 @@ export interface VisualizerSettings {
   barWidthRatio: number; // 0.1 to 1.0 (bar width relative to slot)
   barGap: number; // pixels
   barRadius: number; // corner radius in px
-  heightScale: number; // 0.2 to 2.5 multiplier
-  maxBarHeight: number; // 10 to 100 percent max ceiling cap
-  softKneeCompression: boolean; // softly compresses high-volume peaks
+  heightScale: number; // 0.2 to 3.0 multiplier (amplitude sensitivity & max height scale)
+  sensitivity: number; // 0.2 to 3.0 audio gain sensitivity
+  softKneeCompression: boolean; // softly compresses high-volume peaks with smooth saturation
   symmetry: 'mirror' | 'top-only' | 'bottom-only';
   smoothing: number; // 0 (raw) to 1 (liquid smooth)
   easingMode: 'organic-fluid' | 'snappy' | 'liquid-flow' | 'gentle';
@@ -74,6 +74,13 @@ export interface VisualizerSettings {
   profileGlow: boolean;
   sideSymmetry: SideSymmetryType; // 'none' | 'mirrored-flank' | 'split-cutout'
   profileWingGap: number; // 0 to 60 px gap between profile picture and waveform wings
+
+  // Joint / Edge & Profile Tapering (Bars smoothly approach zero at ends and/or next to profile)
+  enableJoint: boolean;
+  jointAtEnds: boolean;
+  jointAtProfile: boolean;
+  jointWidth: number; // 5 to 40 (%)
+  jointCurve: 'smooth' | 'linear' | 'cubic';
   
   // Overlays
   showTimeRuler: boolean;

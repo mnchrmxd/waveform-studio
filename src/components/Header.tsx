@@ -1,5 +1,5 @@
 import React from 'react';
-import { Upload, Mic, Music, Sparkles, Download, FileAudio } from 'lucide-react';
+import { Upload, Mic, Music, Sparkles, Download, FileAudio, Link2 } from 'lucide-react';
 import { AudioMetadata } from '../types';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   onDemoClick: () => void;
   onRecordClick: () => void;
   onExportClick: () => void;
+  onUrlAudioClick?: () => void;
   isExportDisabled?: boolean;
 }
 
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDemoClick,
   onRecordClick,
   onExportClick,
+  onUrlAudioClick,
   isExportDisabled,
 }) => {
   return (
@@ -39,10 +41,10 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="flex items-center gap-2">
                 <h1 className="font-display font-bold text-lg tracking-tight text-white">Waveform Studio</h1>
                 <span className="px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  Headless MP4
+                  MP4 & Alpha WebM
                 </span>
               </div>
-              <p className="text-xs text-neutral-400 hidden sm:block">Fast offline audio waveform & video generator</p>
+              <p className="text-xs text-neutral-400 hidden sm:block">Fast offline audio waveform & transparent video generator</p>
             </div>
           </div>
 
@@ -101,7 +103,20 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Upload Audio</span>
           </button>
 
-          {/* Primary Fast Export MP4 Button */}
+          {/* Audio URL Button */}
+          {onUrlAudioClick && (
+            <button
+              id="header-url-audio-btn"
+              onClick={onUrlAudioClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
+              title="Stream or import audio from a web URL"
+            >
+              <Link2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Audio URL</span>
+            </button>
+          )}
+
+          {/* Primary Fast Export Video Button */}
           <button
             id="header-export-mp4-btn"
             onClick={onExportClick}
@@ -111,10 +126,11 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-neutral-800 text-neutral-500 border border-neutral-700/50 cursor-not-allowed'
                 : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-cyan-500/20 ring-1 ring-cyan-400/30 active:scale-[0.98]'
             }`}
+            title="Export high-resolution MP4 or transparent Alpha WebM video"
           >
             <Download className="w-4 h-4" />
-            <span className="font-semibold">Export MP4</span>
-            <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-white/20 font-mono">⚡ Fast</span>
+            <span className="font-semibold">Export Video</span>
+            <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-white/20 font-mono">MP4 & Alpha</span>
           </button>
         </div>
       </div>
