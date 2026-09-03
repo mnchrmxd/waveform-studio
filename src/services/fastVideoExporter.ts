@@ -22,6 +22,7 @@ export interface ExportConfig {
   settings: VisualizerSettings;
   theme: ColorTheme;
   backgroundImage?: HTMLImageElement | ImageBitmap | null;
+  backgroundVideo?: HTMLVideoElement | null;
   backgroundBlur?: number;
   backgroundDim?: number;
   profileImage?: HTMLImageElement | ImageBitmap | null;
@@ -445,6 +446,22 @@ export class FastHeadlessVideoExporter {
         (config.settings.heightScale || 1.0) * (config.settings.sensitivity || 1.0)
       );
 
+      // Sync background video frame if active
+      if (config.backgroundVideo && !isAlphaExport && config.backgroundVideo.duration > 0) {
+        const vidTarget = ((frameTimeSec - trimStart) % config.backgroundVideo.duration);
+        if (Math.abs(config.backgroundVideo.currentTime - vidTarget) > 0.035) {
+          config.backgroundVideo.currentTime = vidTarget;
+          await new Promise<void>((resolve) => {
+            const onDone = () => {
+              config.backgroundVideo?.removeEventListener('seeked', onDone);
+              resolve();
+            };
+            config.backgroundVideo?.addEventListener('seeked', onDone);
+            setTimeout(onDone, 50);
+          });
+        }
+      }
+
       // Render frame
       renderVisualizerFrame({
         ctx,
@@ -458,6 +475,7 @@ export class FastHeadlessVideoExporter {
         settings: effectiveSettings,
         theme: config.theme,
         backgroundImage: isAlphaExport ? null : config.backgroundImage,
+        backgroundVideo: isAlphaExport ? null : config.backgroundVideo,
         backgroundBlur: isAlphaExport ? 0 : config.backgroundBlur,
         backgroundDim: isAlphaExport ? 0 : config.backgroundDim,
         profileImage: config.profileImage,

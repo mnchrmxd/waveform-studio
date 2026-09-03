@@ -18,17 +18,28 @@ export type BackgroundType =
 
 export type AspectRatioType = '16:9' | '1:1' | '9:16' | '21:9' | '3:1' | 'responsive';
 
+export type ColorRepresentationMode =
+  | 'bottom-to-top'
+  | 'top-to-bottom'
+  | 'right-to-left'
+  | 'left-to-right'
+  | 'inside-out-horizontal'
+  | 'inside-out-vertical'
+  | 'inside-out-circular'
+  | 'alternate-bars';
+
 export interface ColorTheme {
   id: string;
   name: string;
   category: 'neon' | 'modern' | 'minimal' | 'gradient';
   primaryColor: string;
-  primaryGradientEnd: string;
-  progressColor: string;
-  progressGradientEnd: string;
+  gradientColor: string;
   backgroundColor: string;
   backgroundSecondary: string;
-  accentColor: string;
+  accentColor?: string;
+  primaryGradientEnd?: string;
+  progressColor?: string;
+  progressGradientEnd?: string;
   playheadColor: string;
   gridColor: string;
 }
@@ -55,12 +66,17 @@ export interface VisualizerSettings {
   themeId: string;
   useCustomColors: boolean;
   primaryColor: string;
-  primaryGradientEnd: string;
-  progressColor: string;
-  progressGradientEnd: string;
+  enableGradient: boolean; // Switch button to toggle optional gradient/accent color
+  gradientColor: string; // The secondary / gradient / accent color
+  colorMode: ColorRepresentationMode; // How primary and gradient/accent colors are represented
   backgroundColor: string;
   backgroundType: BackgroundType;
   glowIntensity: number; // 0 to 1
+
+  // Deprecated fields (kept optional for backwards compatibility)
+  primaryGradientEnd?: string;
+  progressColor?: string;
+  progressGradientEnd?: string;
 
   // Profile Picture / Avatar & Side Symmetry
   showProfileImage: boolean;
@@ -83,17 +99,19 @@ export interface VisualizerSettings {
   jointCurve: 'smooth' | 'linear' | 'cubic';
   
   // Overlays
-  showTimeRuler: boolean;
-  showTimeRulerInExport: boolean;
   showDbGrid: boolean;
   showCenterLine: boolean;
-  showPlayhead: boolean;
   showTrackInfo: boolean;
   trackTitle: string;
   artistName: string;
   customWatermark: string;
   showWatermark: boolean;
   infoPosition: 'top-left' | 'top-right' | 'bottom-left' | 'center-top';
+
+  // Deprecated overlay fields (kept optional for backwards compatibility)
+  showPlayhead?: boolean;
+  showTimeRuler?: boolean;
+  showTimeRulerInExport?: boolean;
 
   // Radial specific
   radialInnerRadius: number; // 0.1 to 0.7

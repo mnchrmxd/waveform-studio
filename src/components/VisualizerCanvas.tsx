@@ -15,6 +15,8 @@ interface VisualizerCanvasProps {
   isPlaying: boolean;
   onSeek: (seconds: number) => void;
   backgroundImage?: HTMLImageElement | null;
+  backgroundVideo?: HTMLVideoElement | null;
+  backgroundVideoUrl?: string | null;
   backgroundBlur?: number;
   backgroundDim?: number;
   profileImage?: HTMLImageElement | null;
@@ -34,6 +36,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
   isPlaying,
   onSeek,
   backgroundImage,
+  backgroundVideo,
   backgroundBlur = 10,
   backgroundDim = 0.6,
   profileImage,
@@ -205,12 +208,32 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
       settings,
       theme,
       backgroundImage,
+      backgroundVideo,
       backgroundBlur,
       backgroundDim,
       profileImage,
       isExport: false,
     });
-  }, [buffer, currentTime, duration, isPlaying, settings, theme, backgroundImage, backgroundBlur, backgroundDim, profileImage, waveformData]);
+  }, [buffer, currentTime, duration, isPlaying, settings, theme, backgroundImage, backgroundVideo, backgroundBlur, backgroundDim, profileImage, waveformData]);
+
+  // Keep video playback synchronized with audio state
+  useEffect(() => {
+    if (!backgroundVideo) return;
+    if (isPlaying) {
+      backgroundVideo.play().catch(() => {});
+    } else {
+      backgroundVideo.pause();
+    }
+  }, [isPlaying, backgroundVideo]);
+
+  // Sync video time on audio seek or drift
+  useEffect(() => {
+    if (!backgroundVideo || !backgroundVideo.duration || Number.isNaN(backgroundVideo.duration)) return;
+    const target = (currentTime % backgroundVideo.duration);
+    if (Math.abs(backgroundVideo.currentTime - target) > 0.35) {
+      backgroundVideo.currentTime = target;
+    }
+  }, [currentTime, backgroundVideo]);
 
   // Continuous animation loop
   useEffect(() => {

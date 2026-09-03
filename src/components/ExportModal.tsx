@@ -37,6 +37,8 @@ interface ExportModalProps {
   trimEnd: number;
   backgroundImage?: HTMLImageElement | null;
   backgroundImageUrl?: string | null;
+  backgroundVideo?: HTMLVideoElement | null;
+  backgroundVideoUrl?: string | null;
   backgroundBlur?: number;
   backgroundDim?: number;
   profileImage?: HTMLImageElement | null;
@@ -55,6 +57,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   trimEnd,
   backgroundImage,
   backgroundImageUrl,
+  backgroundVideo,
+  backgroundVideoUrl,
   backgroundBlur,
   backgroundDim,
   profileImage,
@@ -169,6 +173,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       settings: exportAlpha ? { ...settings, backgroundType: 'transparent' } : settings,
       theme,
       backgroundImage: exportAlpha ? null : backgroundImage,
+      backgroundVideo: exportAlpha ? null : backgroundVideo,
       backgroundBlur: exportAlpha ? 0 : backgroundBlur,
       backgroundDim: exportAlpha ? 0 : backgroundDim,
       profileImage,
@@ -502,6 +507,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 )}
               </div>
 
+              {/* Backdrop Summary Status */}
+              <div className="px-3 py-2 rounded-xl bg-neutral-900/40 border border-neutral-800/80 flex items-center justify-between text-xs">
+                <span className="text-neutral-400">Rendering Backdrop:</span>
+                <span className="font-medium text-cyan-300 font-mono">
+                  {exportAlpha
+                    ? 'Transparent Alpha (None)'
+                    : backgroundVideo
+                    ? 'Looping Video Active'
+                    : backgroundImage
+                    ? 'Image Artwork Active'
+                    : settings.backgroundType === 'custom-solid'
+                    ? `Solid Color (${settings.backgroundColor || '#09090b'})`
+                    : settings.backgroundType}
+                </span>
+              </div>
+
               {/* Error Display */}
               {errorMessage && (
                 <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
@@ -763,6 +784,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           profileImageUrl={profileImageUrl}
           backgroundImage={backgroundImage}
           backgroundImageUrl={backgroundImageUrl}
+          backgroundVideo={backgroundVideo}
+          backgroundVideoUrl={backgroundVideoUrl}
         />
       )}
     </div>

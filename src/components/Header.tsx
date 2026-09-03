@@ -40,9 +40,6 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-display font-bold text-lg tracking-tight text-white">Waveform Studio</h1>
-                <span className="px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  MP4 & Alpha WebM
-                </span>
               </div>
               <p className="text-xs text-neutral-400 hidden sm:block">Fast offline audio waveform & transparent video generator</p>
             </div>

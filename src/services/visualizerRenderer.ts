@@ -1,4 +1,4 @@
-import { ColorTheme, VisualizerSettings, WaveformData, ProfileImageShape, SideSymmetryType } from '../types';
+import { ColorTheme, VisualizerSettings, WaveformData, ProfileImageShape, SideSymmetryType, ColorRepresentationMode } from '../types';
 import { SpectrumData } from './fftAnalyzer';
 
 export interface RenderFrameOptions {
@@ -13,10 +13,97 @@ export interface RenderFrameOptions {
   settings: VisualizerSettings;
   theme: ColorTheme;
   backgroundImage?: HTMLImageElement | ImageBitmap | null;
+  backgroundVideo?: HTMLVideoElement | null;
   backgroundBlur?: number;
   backgroundDim?: number;
   profileImage?: HTMLImageElement | ImageBitmap | null;
   isExport?: boolean;
+}
+
+export function getVisualizerGradient(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  primaryCol: string,
+  gradientCol: string,
+  enableGradient: boolean,
+  colorMode: ColorRepresentationMode,
+  avatarX?: number,
+  avatarY?: number
+): string | CanvasGradient {
+  if (!enableGradient) {
+    return primaryCol;
+  }
+
+  switch (colorMode) {
+    case 'bottom-to-top': {
+      const grad = ctx.createLinearGradient(0, y + height, 0, y);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'top-to-bottom': {
+      const grad = ctx.createLinearGradient(0, y, 0, y + height);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'right-to-left': {
+      const grad = ctx.createLinearGradient(x + width, 0, x, 0);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'left-to-right': {
+      const grad = ctx.createLinearGradient(x, 0, x + width, 0);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'bottom-to-top': {
+      const grad = ctx.createLinearGradient(0, y + height, 0, y);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'inside-out-horizontal': {
+      const grad = ctx.createLinearGradient(x, 0, x + width, 0);
+      const centerFrac =
+        avatarX !== undefined && avatarX >= x && avatarX <= x + width
+          ? (avatarX - x) / width
+          : 0.5;
+      grad.addColorStop(0, gradientCol);
+      grad.addColorStop(Math.max(0.1, Math.min(0.9, centerFrac)), primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'inside-out-vertical': {
+      const grad = ctx.createLinearGradient(0, y, 0, y + height);
+      grad.addColorStop(0, gradientCol);
+      grad.addColorStop(0.5, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'inside-out-circular': {
+      const cx = avatarX !== undefined && avatarX > 0 ? avatarX : x + width / 2;
+      const cy = avatarY !== undefined && avatarY > 0 ? avatarY : y + height / 2;
+      const maxR = Math.max(width, height) / 2;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+    case 'alternate-bars':
+      return primaryCol;
+    default: {
+      const grad = ctx.createLinearGradient(0, y + height, 0, y);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
+  }
 }
 
 // Cached Background Canvas to avoid CPU blur filter on every frame
@@ -34,7 +121,7 @@ function getCachedBackground(
   backgroundDim: number = 0.6
 ): HTMLCanvasElement | OffscreenCanvas | null {
   const imageKey = backgroundImage ? `${(backgroundImage as HTMLImageElement).src || 'bitmap'}` : 'none';
-  const currentKey = `${width}x${height}_${settings.backgroundType}_${theme.id}_${imageKey}_${backgroundBlur}_${backgroundDim}`;
+  const currentKey = `${width}x${height}_${settings.backgroundType}_${settings.backgroundColor}_${theme.id}_${imageKey}_${backgroundBlur}_${backgroundDim}`;
 
   if (cachedBgCanvas && cachedBgKey === currentKey) {
     return cachedBgCanvas;
@@ -98,6 +185,11 @@ function getCachedBackground(
   }
 
   switch (settings.backgroundType) {
+    case 'custom-solid':
+      ctx.fillStyle = settings.backgroundColor || '#09090b';
+      ctx.fillRect(0, 0, width, height);
+      break;
+
     case 'oled-black':
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
@@ -113,7 +205,7 @@ function getCachedBackground(
     }
 
     case 'radial-spotlight': {
-      ctx.fillStyle = theme.backgroundColor || '#09090b';
+      ctx.fillStyle = settings.backgroundColor || theme.backgroundColor || '#09090b';
       ctx.fillRect(0, 0, width, height);
       const spotGrad = ctx.createRadialGradient(
         width / 2,
@@ -134,9 +226,9 @@ function getCachedBackground(
 
     case 'gradient-mesh': {
       const meshGrad = ctx.createLinearGradient(0, 0, width, height);
-      meshGrad.addColorStop(0, theme.backgroundColor || '#09090b');
+      meshGrad.addColorStop(0, settings.backgroundColor || theme.backgroundColor || '#09090b');
       meshGrad.addColorStop(0.5, theme.backgroundSecondary || '#18181b');
-      meshGrad.addColorStop(1, theme.backgroundColor || '#09090b');
+      meshGrad.addColorStop(1, settings.backgroundColor || theme.backgroundColor || '#09090b');
       ctx.fillStyle = meshGrad;
       ctx.fillRect(0, 0, width, height);
 
@@ -179,7 +271,7 @@ function getCachedBackground(
         Math.max(width, height) * 0.75
       );
       bgGrad.addColorStop(0, theme.backgroundSecondary || '#18181b');
-      bgGrad.addColorStop(1, theme.backgroundColor || '#09090b');
+      bgGrad.addColorStop(1, settings.backgroundColor || theme.backgroundColor || '#09090b');
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
       break;
@@ -200,6 +292,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
     settings,
     theme,
     backgroundImage,
+    backgroundVideo,
     backgroundBlur = 10,
     backgroundDim = 0.6,
     profileImage,
@@ -219,19 +312,54 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
     ctx.translate(-cx, -cy);
   }
 
-  // 2. Render Fast Cached Background (Skipped for transparent alpha stages/exports)
+  // 2. Render Background (Skipped for transparent alpha stages/exports)
   if (settings.backgroundType !== 'transparent') {
-    const cachedBg = getCachedBackground(
-      width,
-      height,
-      settings,
-      theme,
-      backgroundImage,
-      backgroundBlur,
-      backgroundDim
-    );
-    if (cachedBg) {
-      ctx.drawImage(cachedBg, 0, 0);
+    if (backgroundVideo && (backgroundVideo.readyState >= 2 || (backgroundVideo.videoWidth > 0 && backgroundVideo.videoHeight > 0))) {
+      ctx.save();
+      try {
+        if (backgroundBlur > 0) {
+          ctx.filter = `blur(${backgroundBlur}px)`;
+        }
+        const vw = backgroundVideo.videoWidth || 1920;
+        const vh = backgroundVideo.videoHeight || 1080;
+        const vidAspect = vw / vh;
+        const canvasAspect = width / height;
+        let sWidth = vw;
+        let sHeight = vh;
+        let sx = 0;
+        let sy = 0;
+
+        if (vidAspect > canvasAspect) {
+          sWidth = vh * canvasAspect;
+          sx = (vw - sWidth) / 2;
+        } else {
+          sHeight = vw / canvasAspect;
+          sy = (vh - sHeight) / 2;
+        }
+
+        ctx.drawImage(backgroundVideo, sx, sy, sWidth, sHeight, 0, 0, width, height);
+        ctx.filter = 'none';
+
+        // Dimming overlay
+        ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0.05, backgroundDim)})`;
+        ctx.fillRect(0, 0, width, height);
+      } catch {
+        // Fallback to theme or solid if video frame cannot be drawn
+      }
+      ctx.restore();
+    } else {
+      const cachedBg = getCachedBackground(
+        width,
+        height,
+        settings,
+        theme,
+        backgroundImage,
+        backgroundBlur,
+        backgroundDim
+      );
+      if (cachedBg) {
+        ctx.drawImage(cachedBg, 0, 0);
+      }
     }
   }
 
@@ -379,19 +507,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
     );
   }
 
-  // 7. Overlays
-  // In exports: main time ruler is excluded by default for clean video clips!
-  const shouldRenderTimeRuler =
-    settings.showTimeRuler &&
-    settings.style !== 'radial' &&
-    (!isExport || settings.showTimeRulerInExport);
-
-  if (shouldRenderTimeRuler) {
-    renderTimeRuler(ctx, drawX, drawY, drawWidth, drawHeight, duration);
-  }
-  if (settings.showPlayhead && duration > 0 && settings.style !== 'radial') {
-    renderPlayhead(ctx, drawX, drawY, drawWidth, drawHeight, time, duration, theme);
-  }
+  // 7. Overlays (Ruler & Playhead deprecated)
   if (settings.showTrackInfo) {
     renderTrackOverlay(ctx, width, height, padding, settings, theme, time, duration);
   }
@@ -554,35 +670,26 @@ function renderMirroredBars(
   spectrum: SpectrumData,
   settings: VisualizerSettings,
   theme: ColorTheme,
-  time: number,
-  duration: number,
+  _time: number,
+  _duration: number,
   isProfileActive: boolean = false,
   avatarX: number = 0,
-  avatarY: number = 0
+  _avatarY: number = 0
 ): void {
   const barCount = Math.max(16, Math.min(256, settings.barCount || 120));
   const barRadius = settings.barRadius || 3;
   const centerY = y + height / 2;
   const scale = settings.heightScale || 1.0;
   const maxHalfHeight = (height / 2) * scale;
-  const progressRatio = duration > 0 ? time / duration : 0;
   const glow = settings.glowIntensity || 0.4;
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const primaryGradEnd = settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd;
-  const progressCol = settings.useCustomColors ? settings.progressColor : theme.progressColor;
-  const progressGradEnd = settings.useCustomColors ? settings.progressGradientEnd : theme.progressGradientEnd;
-
-  // Single shared gradients for all bars
-  const primaryGrad = ctx.createLinearGradient(0, centerY - maxHalfHeight, 0, centerY + maxHalfHeight);
-  primaryGrad.addColorStop(0, primaryGradEnd || primaryCol);
-  primaryGrad.addColorStop(0.5, primaryCol);
-  primaryGrad.addColorStop(1, primaryGradEnd || primaryCol);
-
-  const progressGrad = ctx.createLinearGradient(0, centerY - maxHalfHeight, 0, centerY + maxHalfHeight);
-  progressGrad.addColorStop(0, progressGradEnd || progressCol);
-  progressGrad.addColorStop(0.5, progressCol);
-  progressGrad.addColorStop(1, progressGradEnd || progressCol);
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
+  const isAlternate = enableGradient && colorMode === 'alternate-bars';
 
   ctx.save();
   if (glow > 0) {
@@ -611,101 +718,136 @@ function renderMirroredBars(
     const slotRight = rightWingWidth / nRight;
     const barWRight = Math.max(1, slotRight * (settings.barWidthRatio || 0.7));
 
-    // Pass 1: Progressed Left Wing & Right Wing
-    ctx.beginPath();
-    const splitX = x + width * progressRatio;
+    if (isAlternate) {
+      const pathEven = new Path2D();
+      const pathOdd = new Path2D();
 
-    // Left Wing: bars from left edge towards avatar (frequencies mirror with low bass near avatar)
-    for (let i = 0; i < nLeft; i++) {
-      const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
-      if (bx > splitX) continue;
+      // Left Wing: bars from left edge towards avatar
+      for (let i = 0; i < nLeft; i++) {
+        const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
+        const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
+        const freqFrac = (nLeft - 1 - i) / nLeft;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barHeight = rawVal * maxHalfHeight * joint;
+        if (barHeight < 0.5) continue;
 
-      const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
-      const freqFrac = (nLeft - 1 - i) / nLeft;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const rawVal = spectrum.frequencies[freqIdx] || 0;
-      const barHeight = rawVal * maxHalfHeight * joint;
-      if (barHeight < 0.5) continue;
-
-      if (settings.symmetry === 'top-only') {
-        roundRectPath(ctx, bx, centerY - barHeight * 2, barWLeft, barHeight * 2, barRadius);
-      } else if (settings.symmetry === 'bottom-only') {
-        roundRectPath(ctx, bx, centerY, barWLeft, barHeight * 2, barRadius);
-      } else {
-        roundRectPath(ctx, bx, centerY - barHeight, barWLeft, barHeight * 2, barRadius);
+        const target = i % 2 === 0 ? pathEven : pathOdd;
+        if (settings.symmetry === 'top-only') {
+          roundRectPath(target, bx, centerY - barHeight * 2, barWLeft, barHeight * 2, barRadius);
+        } else if (settings.symmetry === 'bottom-only') {
+          roundRectPath(target, bx, centerY, barWLeft, barHeight * 2, barRadius);
+        } else {
+          roundRectPath(target, bx, centerY - barHeight, barWLeft, barHeight * 2, barRadius);
+        }
       }
-    }
 
-    // Right Wing: bars from avatar towards right edge (bass closest to avatar, mirroring left wing!)
-    for (let j = 0; j < nRight; j++) {
-      const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
-      if (bx > splitX) continue;
+      // Right Wing: bars from avatar towards right edge
+      for (let j = 0; j < nRight; j++) {
+        const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
+        const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
+        const freqFrac = j / nRight;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barHeight = rawVal * maxHalfHeight * joint;
+        if (barHeight < 0.5) continue;
 
-      const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
-      const freqFrac = j / nRight;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const rawVal = spectrum.frequencies[freqIdx] || 0;
-      const barHeight = rawVal * maxHalfHeight * joint;
-      if (barHeight < 0.5) continue;
-
-      if (settings.symmetry === 'top-only') {
-        roundRectPath(ctx, bx, centerY - barHeight * 2, barWRight, barHeight * 2, barRadius);
-      } else if (settings.symmetry === 'bottom-only') {
-        roundRectPath(ctx, bx, centerY, barWRight, barHeight * 2, barRadius);
-      } else {
-        roundRectPath(ctx, bx, centerY - barHeight, barWRight, barHeight * 2, barRadius);
+        const target = j % 2 === 0 ? pathEven : pathOdd;
+        if (settings.symmetry === 'top-only') {
+          roundRectPath(target, bx, centerY - barHeight * 2, barWRight, barHeight * 2, barRadius);
+        } else if (settings.symmetry === 'bottom-only') {
+          roundRectPath(target, bx, centerY, barWRight, barHeight * 2, barRadius);
+        } else {
+          roundRectPath(target, bx, centerY - barHeight, barWRight, barHeight * 2, barRadius);
+        }
       }
-    }
 
-    ctx.fillStyle = progressGrad;
-    if (glow > 0) ctx.shadowColor = progressCol;
-    ctx.fill();
+      ctx.fillStyle = primaryCol;
+      if (glow > 0) ctx.shadowColor = primaryCol;
+      ctx.fill(pathEven);
 
-    // Pass 2: Remaining Unplayed Left & Right Wings
-    ctx.beginPath();
-    for (let i = 0; i < nLeft; i++) {
-      const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
-      if (bx <= splitX) continue;
+      ctx.fillStyle = gradientCol;
+      if (glow > 0) ctx.shadowColor = gradientCol;
+      ctx.fill(pathOdd);
+    } else {
+      ctx.beginPath();
+      let maxActiveBarH = 10;
 
-      const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
-      const freqFrac = (nLeft - 1 - i) / nLeft;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const rawVal = spectrum.frequencies[freqIdx] || 0;
-      const barHeight = rawVal * maxHalfHeight * joint;
-      if (barHeight < 0.5) continue;
+      // Left Wing
+      for (let i = 0; i < nLeft; i++) {
+        const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
+        const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
+        const freqFrac = (nLeft - 1 - i) / nLeft;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barHeight = rawVal * maxHalfHeight * joint;
+        if (barHeight > maxActiveBarH) maxActiveBarH = barHeight;
+        if (barHeight < 0.5) continue;
 
-      if (settings.symmetry === 'top-only') {
-        roundRectPath(ctx, bx, centerY - barHeight * 2, barWLeft, barHeight * 2, barRadius);
-      } else if (settings.symmetry === 'bottom-only') {
-        roundRectPath(ctx, bx, centerY, barWLeft, barHeight * 2, barRadius);
-      } else {
-        roundRectPath(ctx, bx, centerY - barHeight, barWLeft, barHeight * 2, barRadius);
+        if (settings.symmetry === 'top-only') {
+          roundRectPath(ctx, bx, centerY - barHeight * 2, barWLeft, barHeight * 2, barRadius);
+        } else if (settings.symmetry === 'bottom-only') {
+          roundRectPath(ctx, bx, centerY, barWLeft, barHeight * 2, barRadius);
+        } else {
+          roundRectPath(ctx, bx, centerY - barHeight, barWLeft, barHeight * 2, barRadius);
+        }
       }
-    }
 
-    for (let j = 0; j < nRight; j++) {
-      const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
-      if (bx <= splitX) continue;
+      // Right Wing
+      for (let j = 0; j < nRight; j++) {
+        const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
+        const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
+        const freqFrac = j / nRight;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barHeight = rawVal * maxHalfHeight * joint;
+        if (barHeight > maxActiveBarH) maxActiveBarH = barHeight;
+        if (barHeight < 0.5) continue;
 
-      const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
-      const freqFrac = j / nRight;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const rawVal = spectrum.frequencies[freqIdx] || 0;
-      const barHeight = rawVal * maxHalfHeight * joint;
-      if (barHeight < 0.5) continue;
-
-      if (settings.symmetry === 'top-only') {
-        roundRectPath(ctx, bx, centerY - barHeight * 2, barWRight, barHeight * 2, barRadius);
-      } else if (settings.symmetry === 'bottom-only') {
-        roundRectPath(ctx, bx, centerY, barWRight, barHeight * 2, barRadius);
-      } else {
-        roundRectPath(ctx, bx, centerY - barHeight, barWRight, barHeight * 2, barRadius);
+        if (settings.symmetry === 'top-only') {
+          roundRectPath(ctx, bx, centerY - barHeight * 2, barWRight, barHeight * 2, barRadius);
+        } else if (settings.symmetry === 'bottom-only') {
+          roundRectPath(ctx, bx, centerY, barWRight, barHeight * 2, barRadius);
+        } else {
+          roundRectPath(ctx, bx, centerY - barHeight, barWRight, barHeight * 2, barRadius);
+        }
       }
-    }
 
-    ctx.fillStyle = primaryGrad;
-    if (glow > 0) ctx.shadowColor = primaryCol;
-    ctx.fill();
+      const isVerticalMode =
+        colorMode === 'bottom-to-top' ||
+        colorMode === 'top-to-bottom' ||
+        colorMode === 'inside-out-vertical';
+
+      const activeVertH = isVerticalMode
+        ? Math.max(20, Math.min(maxHalfHeight, maxActiveBarH * (settings.symmetry === 'mirror' ? 1.05 : 2.05)))
+        : maxHalfHeight;
+
+      let gradY = centerY - activeVertH;
+      let gradH = activeVertH * 2;
+      if (settings.symmetry === 'top-only') {
+        gradY = centerY - activeVertH;
+        gradH = activeVertH;
+      } else if (settings.symmetry === 'bottom-only') {
+        gradY = centerY;
+        gradH = activeVertH;
+      }
+
+      ctx.fillStyle = getVisualizerGradient(
+        ctx,
+        x,
+        gradY,
+        width,
+        gradH,
+        primaryCol,
+        gradientCol,
+        enableGradient,
+        colorMode,
+        avatarX,
+        centerY
+      );
+      if (glow > 0) ctx.shadowColor = primaryCol;
+      ctx.fill();
+    }
 
     ctx.restore();
     return;
@@ -714,86 +856,121 @@ function renderMirroredBars(
   // CASE B: Standard / Split Cutout Mode
   const slotWidth = width / barCount;
   const barWidth = Math.max(1, slotWidth * (settings.barWidthRatio || 0.7));
-  const splitIdx = Math.floor(barCount * progressRatio);
-
   const isCutout = isProfileActive && settings.sideSymmetry === 'split-cutout';
   const cutoutLeft = avatarX - avatarRadius - gap;
   const cutoutRight = avatarX + avatarRadius + gap;
 
-  // Pass 1: Progressed Bars
-  ctx.beginPath();
-  for (let i = 0; i <= splitIdx && i < barCount; i++) {
-    const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
-    if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) {
-      continue; // Skip bars inside the avatar cutout
+  if (isAlternate) {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
+
+    for (let i = 0; i < barCount; i++) {
+      const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
+      if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) {
+        continue;
+      }
+
+      const joint = getContinuousJointFactor(
+        bx,
+        barWidth,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
+      const rawVal = spectrum.frequencies[freqIdx] || 0;
+      const barHeight = rawVal * maxHalfHeight * joint;
+      if (barHeight < 0.5) continue;
+
+      const target = i % 2 === 0 ? pathEven : pathOdd;
+      if (settings.symmetry === 'top-only') {
+        roundRectPath(target, bx, centerY - barHeight * 2, barWidth, barHeight * 2, barRadius);
+      } else if (settings.symmetry === 'bottom-only') {
+        roundRectPath(target, bx, centerY, barWidth, barHeight * 2, barRadius);
+      } else {
+        roundRectPath(target, bx, centerY - barHeight, barWidth, barHeight * 2, barRadius);
+      }
     }
 
-    const joint = getContinuousJointFactor(
-      bx,
-      barWidth,
-      x,
-      width,
-      avatarX,
-      avatarRadius,
-      gap,
-      settings,
-      isProfileActive
-    );
-    const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
-    const rawVal = spectrum.frequencies[freqIdx] || 0;
-    const barHeight = rawVal * maxHalfHeight * joint;
-    if (barHeight < 0.5) continue;
+    ctx.fillStyle = primaryCol;
+    if (glow > 0) ctx.shadowColor = primaryCol;
+    ctx.fill(pathEven);
 
+    ctx.fillStyle = gradientCol;
+    if (glow > 0) ctx.shadowColor = gradientCol;
+    ctx.fill(pathOdd);
+  } else {
+    ctx.beginPath();
+    let maxActiveBarH = 10;
+
+    for (let i = 0; i < barCount; i++) {
+      const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
+      if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) {
+        continue;
+      }
+
+      const joint = getContinuousJointFactor(
+        bx,
+        barWidth,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
+      const rawVal = spectrum.frequencies[freqIdx] || 0;
+      const barHeight = rawVal * maxHalfHeight * joint;
+      if (barHeight > maxActiveBarH) maxActiveBarH = barHeight;
+      if (barHeight < 0.5) continue;
+
+      if (settings.symmetry === 'top-only') {
+        roundRectPath(ctx, bx, centerY - barHeight * 2, barWidth, barHeight * 2, barRadius);
+      } else if (settings.symmetry === 'bottom-only') {
+        roundRectPath(ctx, bx, centerY, barWidth, barHeight * 2, barRadius);
+      } else {
+        roundRectPath(ctx, bx, centerY - barHeight, barWidth, barHeight * 2, barRadius);
+      }
+    }
+
+    const isVerticalMode =
+      colorMode === 'bottom-to-top' ||
+      colorMode === 'top-to-bottom' ||
+      colorMode === 'inside-out-vertical';
+
+    const activeVertH = isVerticalMode
+      ? Math.max(20, Math.min(maxHalfHeight, maxActiveBarH * (settings.symmetry === 'mirror' ? 1.05 : 2.05)))
+      : maxHalfHeight;
+
+    let gradY = centerY - activeVertH;
+    let gradH = activeVertH * 2;
     if (settings.symmetry === 'top-only') {
-      roundRectPath(ctx, bx, centerY - barHeight * 2, barWidth, barHeight * 2, barRadius);
+      gradY = centerY - activeVertH;
+      gradH = activeVertH;
     } else if (settings.symmetry === 'bottom-only') {
-      roundRectPath(ctx, bx, centerY, barWidth, barHeight * 2, barRadius);
-    } else {
-      roundRectPath(ctx, bx, centerY - barHeight, barWidth, barHeight * 2, barRadius);
-    }
-  }
-
-  if (splitIdx >= 0) {
-    ctx.fillStyle = progressGrad;
-    if (glow > 0) ctx.shadowColor = progressCol;
-    ctx.fill();
-  }
-
-  // Pass 2: Remaining Bars
-  ctx.beginPath();
-  for (let i = splitIdx + 1; i < barCount; i++) {
-    const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
-    if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) {
-      continue;
+      gradY = centerY;
+      gradH = activeVertH;
     }
 
-    const joint = getContinuousJointFactor(
-      bx,
-      barWidth,
+    ctx.fillStyle = getVisualizerGradient(
+      ctx,
       x,
+      gradY,
       width,
+      gradH,
+      primaryCol,
+      gradientCol,
+      enableGradient,
+      colorMode,
       avatarX,
-      avatarRadius,
-      gap,
-      settings,
-      isProfileActive
+      centerY
     );
-    const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
-    const rawVal = spectrum.frequencies[freqIdx] || 0;
-    const barHeight = rawVal * maxHalfHeight * joint;
-    if (barHeight < 0.5) continue;
-
-    if (settings.symmetry === 'top-only') {
-      roundRectPath(ctx, bx, centerY - barHeight * 2, barWidth, barHeight * 2, barRadius);
-    } else if (settings.symmetry === 'bottom-only') {
-      roundRectPath(ctx, bx, centerY, barWidth, barHeight * 2, barRadius);
-    } else {
-      roundRectPath(ctx, bx, centerY - barHeight, barWidth, barHeight * 2, barRadius);
-    }
-  }
-
-  if (splitIdx < barCount - 1) {
-    ctx.fillStyle = primaryGrad;
     if (glow > 0) ctx.shadowColor = primaryCol;
     ctx.fill();
   }
@@ -811,30 +988,25 @@ function renderBarsUp(
   spectrum: SpectrumData,
   settings: VisualizerSettings,
   theme: ColorTheme,
-  time: number,
-  duration: number,
+  _time: number,
+  _duration: number,
   isProfileActive: boolean = false,
   avatarX: number = 0,
-  avatarY: number = 0
+  _avatarY: number = 0
 ): void {
   const barCount = Math.max(16, Math.min(256, settings.barCount || 100));
   const barRadius = settings.barRadius || 4;
   const bottomY = y + height - 10;
   const maxHeight = (height - 30) * (settings.heightScale || 1.0);
-  const progressRatio = duration > 0 ? time / duration : 0;
   const glow = settings.glowIntensity || 0.4;
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const primaryGradEnd = settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd;
-  const progressCol = settings.useCustomColors ? settings.progressColor : theme.progressColor;
-
-  const primaryGrad = ctx.createLinearGradient(0, bottomY, 0, bottomY - maxHeight);
-  primaryGrad.addColorStop(0, hexToRgba(primaryCol, 0.4));
-  primaryGrad.addColorStop(1, primaryGradEnd || primaryCol);
-
-  const progressGrad = ctx.createLinearGradient(0, bottomY, 0, bottomY - maxHeight);
-  progressGrad.addColorStop(0, hexToRgba(progressCol, 0.4));
-  progressGrad.addColorStop(1, progressCol);
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
+  const isAlternate = enableGradient && colorMode === 'alternate-bars';
 
   ctx.save();
   if (glow > 0) {
@@ -846,7 +1018,6 @@ function renderBarsUp(
       (settings.profileAudioReactiveScale ? 1 + (spectrum.bassEnergy || 0) * 0.08 : 1)
     : 0;
   const gap = Math.max(0, settings.profileWingGap ?? 16);
-  const splitX = x + width * progressRatio;
 
   // CASE A: Flanking Symmetrical Wings for Bars Up
   if (isProfileActive && settings.sideSymmetry === 'mirrored-flank') {
@@ -865,61 +1036,91 @@ function renderBarsUp(
     const barWRight = Math.max(1, slotRight * (settings.barWidthRatio || 0.75));
     const capH = Math.max(2, barRadius);
 
-    // Progressed Left & Right
-    ctx.beginPath();
-    for (let i = 0; i < nLeft; i++) {
-      const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
-      if (bx > splitX) continue;
-      const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
-      const freqFrac = (nLeft - 1 - i) / nLeft;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const val = spectrum.frequencies[freqIdx] || 0;
-      const barH = val * maxHeight * joint;
-      if (barH < 0.5) continue;
-      roundRectPath(ctx, bx, bottomY - barH, barWLeft, barH, barRadius);
-    }
-    for (let j = 0; j < nRight; j++) {
-      const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
-      if (bx > splitX) continue;
-      const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
-      const freqFrac = j / nRight;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const val = spectrum.frequencies[freqIdx] || 0;
-      const barH = val * maxHeight * joint;
-      if (barH < 0.5) continue;
-      roundRectPath(ctx, bx, bottomY - barH, barWRight, barH, barRadius);
-    }
-    ctx.fillStyle = progressGrad;
-    if (glow > 0) ctx.shadowColor = progressCol;
-    ctx.fill();
+    if (isAlternate) {
+      const pathEven = new Path2D();
+      const pathOdd = new Path2D();
 
-    // Remaining Left & Right
-    ctx.beginPath();
-    for (let i = 0; i < nLeft; i++) {
-      const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
-      if (bx <= splitX) continue;
-      const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
-      const freqFrac = (nLeft - 1 - i) / nLeft;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const val = spectrum.frequencies[freqIdx] || 0;
-      const barH = val * maxHeight * joint;
-      if (barH < 0.5) continue;
-      roundRectPath(ctx, bx, bottomY - barH, barWLeft, barH, barRadius);
+      for (let i = 0; i < nLeft; i++) {
+        const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
+        const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
+        const freqFrac = (nLeft - 1 - i) / nLeft;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const val = spectrum.frequencies[freqIdx] || 0;
+        const barH = val * maxHeight * joint;
+        if (barH < 0.5) continue;
+        roundRectPath(i % 2 === 0 ? pathEven : pathOdd, bx, bottomY - barH, barWLeft, barH, barRadius);
+      }
+
+      for (let j = 0; j < nRight; j++) {
+        const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
+        const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
+        const freqFrac = j / nRight;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const val = spectrum.frequencies[freqIdx] || 0;
+        const barH = val * maxHeight * joint;
+        if (barH < 0.5) continue;
+        roundRectPath(j % 2 === 0 ? pathEven : pathOdd, bx, bottomY - barH, barWRight, barH, barRadius);
+      }
+
+      ctx.fillStyle = primaryCol;
+      if (glow > 0) ctx.shadowColor = primaryCol;
+      ctx.fill(pathEven);
+
+      ctx.fillStyle = gradientCol;
+      if (glow > 0) ctx.shadowColor = gradientCol;
+      ctx.fill(pathOdd);
+    } else {
+      ctx.beginPath();
+      let maxActiveBarH = 10;
+
+      for (let i = 0; i < nLeft; i++) {
+        const bx = x + i * slotLeft + (slotLeft - barWLeft) / 2;
+        const joint = getWingBarJointFactor(i, nLeft, true, settings, isProfileActive);
+        const freqFrac = (nLeft - 1 - i) / nLeft;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barH = rawVal * maxHeight * joint;
+        if (barH > maxActiveBarH) maxActiveBarH = barH;
+        if (barH < 0.5) continue;
+        roundRectPath(ctx, bx, bottomY - barH, barWLeft, barH, barRadius);
+      }
+      for (let j = 0; j < nRight; j++) {
+        const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
+        const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
+        const freqFrac = j / nRight;
+        const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
+        const rawVal = spectrum.frequencies[freqIdx] || 0;
+        const barH = rawVal * maxHeight * joint;
+        if (barH > maxActiveBarH) maxActiveBarH = barH;
+        if (barH < 0.5) continue;
+        roundRectPath(ctx, bx, bottomY - barH, barWRight, barH, barRadius);
+      }
+
+      const isVerticalMode =
+        colorMode === 'bottom-to-top' ||
+        colorMode === 'top-to-bottom' ||
+        colorMode === 'inside-out-vertical';
+
+      const activeVertH = isVerticalMode
+        ? Math.max(20, Math.min(maxHeight, maxActiveBarH * 1.05))
+        : maxHeight;
+
+      ctx.fillStyle = getVisualizerGradient(
+        ctx,
+        x,
+        bottomY - activeVertH,
+        width,
+        activeVertH,
+        primaryCol,
+        gradientCol,
+        enableGradient,
+        colorMode,
+        avatarX,
+        bottomY - activeVertH / 2
+      );
+      if (glow > 0) ctx.shadowColor = primaryCol;
+      ctx.fill();
     }
-    for (let j = 0; j < nRight; j++) {
-      const bx = rightWingStart + j * slotRight + (slotRight - barWRight) / 2;
-      if (bx <= splitX) continue;
-      const joint = getWingBarJointFactor(j, nRight, false, settings, isProfileActive);
-      const freqFrac = j / nRight;
-      const freqIdx = Math.floor(freqFrac * (spectrum.frequencies.length * 0.8));
-      const val = spectrum.frequencies[freqIdx] || 0;
-      const barH = val * maxHeight * joint;
-      if (barH < 0.5) continue;
-      roundRectPath(ctx, bx, bottomY - barH, barWRight, barH, barRadius);
-    }
-    ctx.fillStyle = primaryGrad;
-    if (glow > 0) ctx.shadowColor = primaryCol;
-    ctx.fill();
 
     // Peak Caps
     ctx.beginPath();
@@ -955,65 +1156,92 @@ function renderBarsUp(
   // CASE B: Standard / Split Cutout
   const slotWidth = width / barCount;
   const barWidth = Math.max(1, slotWidth * (settings.barWidthRatio || 0.75));
-  const splitIdx = Math.floor(barCount * progressRatio);
   const isCutout = isProfileActive && settings.sideSymmetry === 'split-cutout';
   const cutoutLeft = avatarX - avatarRadius - gap;
   const cutoutRight = avatarX + avatarRadius + gap;
 
-  // Pass 1: Progressed Bars
-  ctx.beginPath();
-  for (let i = 0; i <= splitIdx && i < barCount; i++) {
-    const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
-    if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) continue;
+  if (isAlternate) {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
 
-    const joint = getContinuousJointFactor(
-      bx,
-      barWidth,
+    for (let i = 0; i < barCount; i++) {
+      const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
+      if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) continue;
+
+      const joint = getContinuousJointFactor(
+        bx,
+        barWidth,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const barH = val * maxHeight * joint;
+      if (barH < 0.5) continue;
+      roundRectPath(i % 2 === 0 ? pathEven : pathOdd, bx, bottomY - barH, barWidth, barH, barRadius);
+    }
+
+    ctx.fillStyle = primaryCol;
+    if (glow > 0) ctx.shadowColor = primaryCol;
+    ctx.fill(pathEven);
+
+    ctx.fillStyle = gradientCol;
+    if (glow > 0) ctx.shadowColor = gradientCol;
+    ctx.fill(pathOdd);
+  } else {
+    ctx.beginPath();
+    let maxActiveBarH = 10;
+
+    for (let i = 0; i < barCount; i++) {
+      const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
+      if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) continue;
+
+      const joint = getContinuousJointFactor(
+        bx,
+        barWidth,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const barH = val * maxHeight * joint;
+      if (barH > maxActiveBarH) maxActiveBarH = barH;
+      if (barH < 0.5) continue;
+      roundRectPath(ctx, bx, bottomY - barH, barWidth, barH, barRadius);
+    }
+
+    const isVerticalMode =
+      colorMode === 'bottom-to-top' ||
+      colorMode === 'top-to-bottom' ||
+      colorMode === 'inside-out-vertical';
+
+    const activeVertH = isVerticalMode
+      ? Math.max(20, Math.min(maxHeight, maxActiveBarH * 1.05))
+      : maxHeight;
+
+    ctx.fillStyle = getVisualizerGradient(
+      ctx,
       x,
+      bottomY - activeVertH,
       width,
+      activeVertH,
+      primaryCol,
+      gradientCol,
+      enableGradient,
+      colorMode,
       avatarX,
-      avatarRadius,
-      gap,
-      settings,
-      isProfileActive
+      bottomY - activeVertH / 2
     );
-    const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
-    const val = spectrum.frequencies[freqIdx] || 0;
-    const barH = val * maxHeight * joint;
-    if (barH < 0.5) continue;
-    roundRectPath(ctx, bx, bottomY - barH, barWidth, barH, barRadius);
-  }
-  if (splitIdx >= 0) {
-    ctx.fillStyle = progressGrad;
-    if (glow > 0) ctx.shadowColor = progressCol;
-    ctx.fill();
-  }
-
-  // Pass 2: Remaining Bars
-  ctx.beginPath();
-  for (let i = splitIdx + 1; i < barCount; i++) {
-    const bx = x + i * slotWidth + (slotWidth - barWidth) / 2;
-    if (isCutout && bx + barWidth >= cutoutLeft && bx <= cutoutRight) continue;
-
-    const joint = getContinuousJointFactor(
-      bx,
-      barWidth,
-      x,
-      width,
-      avatarX,
-      avatarRadius,
-      gap,
-      settings,
-      isProfileActive
-    );
-    const freqIdx = Math.floor((i / barCount) * spectrum.frequencies.length);
-    const val = spectrum.frequencies[freqIdx] || 0;
-    const barH = val * maxHeight * joint;
-    if (barH < 0.5) continue;
-    roundRectPath(ctx, bx, bottomY - barH, barWidth, barH, barRadius);
-  }
-  if (splitIdx < barCount - 1) {
-    ctx.fillStyle = primaryGrad;
     if (glow > 0) ctx.shadowColor = primaryCol;
     ctx.fill();
   }
@@ -1077,7 +1305,11 @@ function renderSmoothWave(
   const gap = Math.max(0, settings.profileWingGap ?? 16);
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const primaryGradEnd = settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd;
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
 
   ctx.save();
 
@@ -1112,10 +1344,19 @@ function renderSmoothWave(
   ctx.fill();
 
   // Draw Primary Wave Lines
-  const waveGrad = ctx.createLinearGradient(x, 0, x + width, 0);
-  waveGrad.addColorStop(0, primaryCol);
-  waveGrad.addColorStop(0.5, primaryGradEnd || primaryCol);
-  waveGrad.addColorStop(1, primaryCol);
+  const waveGrad = getVisualizerGradient(
+    ctx,
+    x,
+    centerY - maxAmp,
+    width,
+    maxAmp * 2,
+    primaryCol,
+    gradientCol,
+    enableGradient,
+    colorMode,
+    avatarX,
+    centerY
+  );
   ctx.strokeStyle = waveGrad;
 
   if (glow > 0) {
@@ -1177,27 +1418,8 @@ function renderProfileImage(
 
   ctx.save();
 
-  // 1. Audio-reactive outer glow ring
-  if (glow && bass > 0.15) {
-    ctx.save();
-    ctx.beginPath();
-    const rippleR = r + 8 + bass * 16;
-    if (shape === 'circle') {
-      ctx.arc(imgX, imgY, rippleR, 0, Math.PI * 2);
-    } else {
-      const cornerR = shape === 'rounded' ? Math.min(24, rippleR * 0.25) : 0;
-      roundRectPath(ctx, imgX - rippleR, imgY - rippleR, rippleR * 2, rippleR * 2, cornerR);
-    }
-    const glowCol = borderColor && borderColor !== '#ffffff' ? borderColor : theme.accentColor || theme.primaryColor;
-    ctx.strokeStyle = hexToRgba(glowCol, Math.min(1, (bass - 0.15) * 1.1));
-    ctx.lineWidth = 2 + bass * 3;
-    ctx.shadowColor = glowCol;
-    ctx.shadowBlur = 14 * bass;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // 2. Base Drop Shadow
+  // Outer neon ripple deprecated for a clean, professional finish
+  // 1. Base Drop Shadow
   if (glow) {
     ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
     ctx.shadowBlur = 18;
@@ -1307,7 +1529,12 @@ function renderRadial(
   const glow = settings.glowIntensity || 0.4;
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const primaryGradEnd = settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd;
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
+  const isAlternate = enableGradient && colorMode === 'alternate-bars';
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -1323,7 +1550,7 @@ function renderRadial(
   ctx.beginPath();
   ctx.arc(0, 0, corePulse * 0.85, 0, Math.PI * 2);
   const coreGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, corePulse);
-  coreGrad.addColorStop(0, hexToRgba(primaryGradEnd || primaryCol, 0.4));
+  coreGrad.addColorStop(0, hexToRgba(enableGradient ? gradientCol : primaryCol, 0.4));
   coreGrad.addColorStop(0.8, hexToRgba(primaryCol, 0.15));
   coreGrad.addColorStop(1, hexToRgba(primaryCol, 0.8));
   ctx.fillStyle = coreGrad;
@@ -1332,34 +1559,108 @@ function renderRadial(
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Radiating Spikes (Single batched stroke path)
+  // Radiating Spikes (Batched Spokes)
   const angleStep = (Math.PI * 2) / barCount;
   const barThickness = Math.max(2, ((Math.PI * 2 * innerRadius) / barCount) * 0.65);
 
-  ctx.beginPath();
-  for (let i = 0; i < barCount; i++) {
-    const half = barCount / 2;
-    const normalizedIdx = i < half ? i / half : (barCount - i) / half;
-    const freqIdx = Math.floor(normalizedIdx * spectrum.frequencies.length);
-    const val = spectrum.frequencies[freqIdx] || 0;
-    const barLen = Math.max(4, val * maxBarLength);
+  if (isAlternate) {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
 
-    const angle = i * angleStep;
-    const cosA = Math.cos(angle);
-    const sinA = Math.sin(angle);
-    const x1 = cosA * corePulse;
-    const y1 = sinA * corePulse;
-    const x2 = cosA * (corePulse + barLen);
-    const y2 = sinA * (corePulse + barLen);
+    for (let i = 0; i < barCount; i++) {
+      const half = barCount / 2;
+      const normalizedIdx = i < half ? i / half : (barCount - i) / half;
+      const freqIdx = Math.floor(normalizedIdx * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const barLen = Math.max(4, val * maxBarLength);
 
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
+      const angle = i * angleStep;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const x1 = cosA * corePulse;
+      const y1 = sinA * corePulse;
+      const x2 = cosA * (corePulse + barLen);
+      const y2 = sinA * (corePulse + barLen);
+
+      const target = i % 2 === 0 ? pathEven : pathOdd;
+      target.moveTo(x1, y1);
+      target.lineTo(x2, y2);
+    }
+
+    ctx.lineWidth = barThickness;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = primaryCol;
+    ctx.stroke(pathEven);
+    ctx.strokeStyle = gradientCol;
+    ctx.stroke(pathOdd);
+  } else {
+    ctx.beginPath();
+    for (let i = 0; i < barCount; i++) {
+      const half = barCount / 2;
+      const normalizedIdx = i < half ? i / half : (barCount - i) / half;
+      const freqIdx = Math.floor(normalizedIdx * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const barLen = Math.max(4, val * maxBarLength);
+
+      const angle = i * angleStep;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const x1 = cosA * corePulse;
+      const y1 = sinA * corePulse;
+      const x2 = cosA * (corePulse + barLen);
+      const y2 = sinA * (corePulse + barLen);
+
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+
+    if (enableGradient) {
+      if (colorMode === 'bottom-to-top') {
+        const spikeGrad = ctx.createLinearGradient(0, maxRadius, 0, -maxRadius);
+        spikeGrad.addColorStop(0, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else if (colorMode === 'top-to-bottom') {
+        const spikeGrad = ctx.createLinearGradient(0, -maxRadius, 0, maxRadius);
+        spikeGrad.addColorStop(0, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else if (colorMode === 'left-to-right') {
+        const spikeGrad = ctx.createLinearGradient(-maxRadius, 0, maxRadius, 0);
+        spikeGrad.addColorStop(0, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else if (colorMode === 'right-to-left') {
+        const spikeGrad = ctx.createLinearGradient(maxRadius, 0, -maxRadius, 0);
+        spikeGrad.addColorStop(0, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else if (colorMode === 'inside-out-horizontal') {
+        const spikeGrad = ctx.createLinearGradient(-maxRadius, 0, maxRadius, 0);
+        spikeGrad.addColorStop(0, gradientCol);
+        spikeGrad.addColorStop(0.5, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else if (colorMode === 'inside-out-vertical') {
+        const spikeGrad = ctx.createLinearGradient(0, -maxRadius, 0, maxRadius);
+        spikeGrad.addColorStop(0, gradientCol);
+        spikeGrad.addColorStop(0.5, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      } else {
+        // 'inside-out-circular' or default: radial bloom from inner ring to spoke tips
+        const spikeGrad = ctx.createRadialGradient(0, 0, corePulse, 0, 0, maxRadius);
+        spikeGrad.addColorStop(0, primaryCol);
+        spikeGrad.addColorStop(1, gradientCol);
+        ctx.strokeStyle = spikeGrad;
+      }
+    } else {
+      ctx.strokeStyle = primaryCol;
+    }
+    ctx.lineWidth = barThickness;
+    ctx.lineCap = 'round';
+    ctx.stroke();
   }
-
-  ctx.strokeStyle = primaryCol;
-  ctx.lineWidth = barThickness;
-  ctx.lineCap = 'round';
-  ctx.stroke();
 
   ctx.restore();
 }
@@ -1397,8 +1698,12 @@ function renderDigitalMatrix(
   const cutoutRight = avatarX + avatarRadius + gap;
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const accentCol = theme.accentColor || theme.primaryGradientEnd || '#f43f5e';
-  const midCol = theme.primaryGradientEnd || primaryCol;
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
+  const isAlternate = enableGradient && colorMode === 'alternate-bars';
 
   ctx.save();
   if (glow > 0) {
@@ -1406,7 +1711,7 @@ function renderDigitalMatrix(
     ctx.shadowColor = primaryCol;
   }
 
-  // Accumulate rects into 4 buckets: Ghost, Primary, Mid, Accent
+  // Ghost blocks background
   ctx.beginPath();
   for (let c = 0; c < cols; c++) {
     const bx = x + c * slotW + (slotW - barW) / 2;
@@ -1419,50 +1724,96 @@ function renderDigitalMatrix(
   ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
   ctx.fill();
 
-  // Active blocks by level
-  const primaryPath = new Path2D();
-  const midPath = new Path2D();
-  const accentPath = new Path2D();
+  // Active blocks
+  if (isAlternate) {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
 
-  for (let c = 0; c < cols; c++) {
-    const bx = x + c * slotW + (slotW - barW) / 2;
-    if (isCutout && bx + barW >= cutoutLeft && bx <= cutoutRight) continue;
+    for (let c = 0; c < cols; c++) {
+      const bx = x + c * slotW + (slotW - barW) / 2;
+      if (isCutout && bx + barW >= cutoutLeft && bx <= cutoutRight) continue;
 
-    const joint = getContinuousJointFactor(
-      bx,
-      barW,
-      x,
-      width,
-      avatarX,
-      avatarRadius,
-      gap,
-      settings,
-      isProfileActive
-    );
-    const freqIdx = Math.floor((c / cols) * spectrum.frequencies.length);
-    const val = spectrum.frequencies[freqIdx] || 0;
-    const activeBlocks = Math.min(rows, Math.round(val * rows * scale * joint));
+      const joint = getContinuousJointFactor(
+        bx,
+        barW,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((c / cols) * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const activeBlocks = Math.min(rows, Math.round(val * rows * scale * joint));
+      const target = c % 2 === 0 ? pathEven : pathOdd;
 
-    for (let r = 0; r < activeBlocks; r++) {
-      const by = y + height - (r + 1) * (blockH + blockGap);
-      if (r > rows * 0.8) {
-        accentPath.rect(bx, by, barW, blockH);
-      } else if (r > rows * 0.5) {
-        midPath.rect(bx, by, barW, blockH);
-      } else {
-        primaryPath.rect(bx, by, barW, blockH);
+      for (let r = 0; r < activeBlocks; r++) {
+        const by = y + height - (r + 1) * (blockH + blockGap);
+        target.rect(bx, by, barW, blockH);
       }
     }
+
+    ctx.fillStyle = primaryCol;
+    ctx.fill(pathEven);
+
+    ctx.fillStyle = gradientCol;
+    ctx.fill(pathOdd);
+  } else {
+    ctx.beginPath();
+    let maxActiveBlocks = 1;
+
+    for (let c = 0; c < cols; c++) {
+      const bx = x + c * slotW + (slotW - barW) / 2;
+      if (isCutout && bx + barW >= cutoutLeft && bx <= cutoutRight) continue;
+
+      const joint = getContinuousJointFactor(
+        bx,
+        barW,
+        x,
+        width,
+        avatarX,
+        avatarRadius,
+        gap,
+        settings,
+        isProfileActive
+      );
+      const freqIdx = Math.floor((c / cols) * spectrum.frequencies.length);
+      const val = spectrum.frequencies[freqIdx] || 0;
+      const activeBlocks = Math.min(rows, Math.round(val * rows * scale * joint));
+      if (activeBlocks > maxActiveBlocks) maxActiveBlocks = activeBlocks;
+
+      for (let r = 0; r < activeBlocks; r++) {
+        const by = y + height - (r + 1) * (blockH + blockGap);
+        ctx.rect(bx, by, barW, blockH);
+      }
+    }
+
+    const isVerticalMode =
+      colorMode === 'bottom-to-top' ||
+      colorMode === 'top-to-bottom' ||
+      colorMode === 'inside-out-vertical';
+
+    const activeHeight = isVerticalMode
+      ? Math.max(20, maxActiveBlocks * (blockH + blockGap))
+      : height;
+
+    ctx.fillStyle = getVisualizerGradient(
+      ctx,
+      x,
+      y + height - activeHeight,
+      width,
+      activeHeight,
+      primaryCol,
+      gradientCol,
+      enableGradient,
+      colorMode,
+      avatarX,
+      y + height / 2
+    );
+    ctx.fill();
   }
-
-  ctx.fillStyle = primaryCol;
-  ctx.fill(primaryPath);
-
-  ctx.fillStyle = midCol;
-  ctx.fill(midPath);
-
-  ctx.fillStyle = accentCol;
-  ctx.fill(accentPath);
 
   ctx.restore();
 }
@@ -1495,7 +1846,11 @@ function renderSpine(
   const gap = Math.max(0, settings.profileWingGap ?? 16);
 
   const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const primaryGradEnd = settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd;
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
 
   ctx.save();
   if (glow > 0) {
@@ -1542,19 +1897,46 @@ function renderSpine(
     ctx.moveTo(n.nx, centerY);
     ctx.lineTo(n.nx, n.ny);
   }
-  ctx.strokeStyle = hexToRgba(primaryGradEnd || primaryCol, 0.4);
+  ctx.strokeStyle = hexToRgba(enableGradient ? gradientCol : primaryCol, 0.4);
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // Batched Nodes
-  ctx.beginPath();
-  for (const n of nodePositions) {
-    if (n.joint < 0.05) continue;
-    ctx.moveTo(n.nx + n.r, n.ny);
-    ctx.arc(n.nx, n.ny, n.r, 0, Math.PI * 2);
+  if (enableGradient && colorMode === 'alternate-bars') {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
+    nodePositions.forEach((n, idx) => {
+      if (n.joint < 0.05) return;
+      const target = idx % 2 === 0 ? pathEven : pathOdd;
+      target.moveTo(n.nx + n.r, n.ny);
+      target.arc(n.nx, n.ny, n.r, 0, Math.PI * 2);
+    });
+    ctx.fillStyle = primaryCol;
+    ctx.fill(pathEven);
+    ctx.fillStyle = gradientCol;
+    ctx.fill(pathOdd);
+  } else {
+    ctx.beginPath();
+    for (const n of nodePositions) {
+      if (n.joint < 0.05) continue;
+      ctx.moveTo(n.nx + n.r, n.ny);
+      ctx.arc(n.nx, n.ny, n.r, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = getVisualizerGradient(
+      ctx,
+      x,
+      centerY - maxAmp,
+      width,
+      maxAmp * 2,
+      primaryCol,
+      gradientCol,
+      enableGradient,
+      colorMode,
+      avatarX,
+      centerY
+    );
+    ctx.fill();
   }
-  ctx.fillStyle = primaryCol;
-  ctx.fill();
 
   ctx.restore();
 }
@@ -1583,6 +1965,13 @@ function renderSpectrumBands(
     { label: '16kHz', val: spectrum.frequencies[64] || 0 },
   ];
 
+  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
+  const gradientCol = settings.useCustomColors
+    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
+    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
+  const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
+
   const bandW = width / bands.length;
   const barW = bandW * 0.65;
   const bottomY = y + height - 25;
@@ -1592,97 +1981,59 @@ function renderSpectrumBands(
   ctx.font = '11px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
 
-  const grad = ctx.createLinearGradient(0, bottomY, 0, bottomY - maxH);
-  grad.addColorStop(0, theme.primaryColor);
-  grad.addColorStop(1, theme.primaryGradientEnd || theme.primaryColor);
+  if (enableGradient && colorMode === 'alternate-bars') {
+    const pathEven = new Path2D();
+    const pathOdd = new Path2D();
+    bands.forEach((b, i) => {
+      const bx = x + i * bandW + (bandW - barW) / 2;
+      const bHeight = Math.max(6, Math.min(1, b.val) * maxH);
+      const by = bottomY - bHeight;
+      const target = i % 2 === 0 ? pathEven : pathOdd;
+      roundRectPath(target, bx, by, barW, bHeight, 4);
+    });
+    ctx.fillStyle = primaryCol;
+    ctx.fill(pathEven);
+    ctx.fillStyle = gradientCol;
+    ctx.fill(pathOdd);
+  } else {
+    ctx.beginPath();
+    let maxActiveH = 10;
+    bands.forEach((b, i) => {
+      const bx = x + i * bandW + (bandW - barW) / 2;
+      const bHeight = Math.max(6, Math.min(1, b.val) * maxH);
+      if (bHeight > maxActiveH) maxActiveH = bHeight;
+      const by = bottomY - bHeight;
+      roundRectPath(ctx, bx, by, barW, bHeight, 4);
+    });
 
-  ctx.beginPath();
-  bands.forEach((b, i) => {
-    const bx = x + i * bandW + (bandW - barW) / 2;
-    const bHeight = Math.max(6, Math.min(1, b.val) * maxH);
-    const by = bottomY - bHeight;
-    roundRectPath(ctx, bx, by, barW, bHeight, 4);
-  });
-  ctx.fillStyle = grad;
-  ctx.fill();
+    const isVerticalMode =
+      colorMode === 'bottom-to-top' ||
+      colorMode === 'top-to-bottom' ||
+      colorMode === 'inside-out-vertical';
+
+    const activeVertH = isVerticalMode
+      ? Math.max(20, Math.min(maxH, maxActiveH * 1.05))
+      : maxH;
+
+    ctx.fillStyle = getVisualizerGradient(
+      ctx,
+      x,
+      bottomY - activeVertH,
+      width,
+      activeVertH,
+      primaryCol,
+      gradientCol,
+      enableGradient,
+      colorMode
+    );
+    ctx.fill();
+  }
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
   bands.forEach((b, i) => {
     const bx = x + i * bandW + (bandW - barW) / 2;
     ctx.fillText(b.label, bx + barW / 2, y + height - 6);
   });
-
-  ctx.restore();
-}
-
-function renderTimeRuler(
-  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  duration: number
-): void {
-  ctx.save();
-  ctx.font = '10px "JetBrains Mono", monospace';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-  ctx.lineWidth = 1;
-
-  const ticks = 8;
-  ctx.beginPath();
-  for (let i = 0; i <= ticks; i++) {
-    const tx = x + (width / ticks) * i;
-    const ty = y + height - 4;
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(tx, ty + 6);
-  }
-  ctx.stroke();
-
-  for (let i = 0; i <= ticks; i++) {
-    const tx = x + (width / ticks) * i;
-    const ty = y + height - 4;
-    const timeSec = (duration / ticks) * i;
-    const min = Math.floor(timeSec / 60);
-    const sec = Math.floor(timeSec % 60)
-      .toString()
-      .padStart(2, '0');
-
-    ctx.textAlign = i === 0 ? 'left' : i === ticks ? 'right' : 'center';
-    ctx.fillText(`${min}:${sec}`, tx, ty + 18);
-  }
-
-  ctx.restore();
-}
-
-function renderPlayhead(
-  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  time: number,
-  duration: number,
-  theme: ColorTheme
-): void {
-  const progress = duration > 0 ? Math.max(0, Math.min(1, time / duration)) : 0;
-  const playheadX = x + width * progress;
-
-  ctx.save();
-  ctx.shadowColor = theme.playheadColor || '#ffffff';
-  ctx.shadowBlur = 6;
-
-  ctx.strokeStyle = theme.playheadColor || '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(playheadX, y);
-  ctx.lineTo(playheadX, y + height);
-  ctx.stroke();
-
-  ctx.fillStyle = theme.playheadColor || '#ffffff';
-  ctx.beginPath();
-  ctx.arc(playheadX, y, 4, 0, Math.PI * 2);
-  ctx.fill();
 
   ctx.restore();
 }
@@ -1750,7 +2101,7 @@ function renderWatermark(
 
 // Utility: Build Rounded Rect path without filling
 function roundRectPath(
-  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | Path2D,
   x: number,
   y: number,
   width: number,

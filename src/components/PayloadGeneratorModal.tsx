@@ -41,6 +41,8 @@ interface PayloadGeneratorModalProps {
   profileImageUrl?: string | null;
   backgroundImage?: HTMLImageElement | null;
   backgroundImageUrl?: string | null;
+  backgroundVideo?: HTMLVideoElement | null;
+  backgroundVideoUrl?: string | null;
 }
 
 export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
@@ -55,6 +57,8 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
   profileImageUrl,
   backgroundImage,
   backgroundImageUrl,
+  backgroundVideo,
+  backgroundVideoUrl,
 }) => {
   // The user requested NO MORE EDITS beyond the format (cURL, JSON, Node)
   const [activeFormat, setActiveFormat] = useState<'curl' | 'json' | 'node'>('curl');
@@ -156,7 +160,7 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
     backgroundImage,
   ]);
 
-  // Construct complete payload strictly from main page + export settings
+  // Construct optimized payload strictly from main page + export settings, ignoring useless parameters
   const payloadObject = useMemo(() => {
     // Audio specification
     let audioField: string | undefined = undefined;
@@ -168,11 +172,129 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
       audioField = 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3';
     }
 
-    // Profile specification
-    const profileField = profileImageUrl || localProfileBase64 || undefined;
+    // Profile specification (only if enabled)
+    const profileField = settings.showProfileImage
+      ? (profileImageUrl || localProfileBase64 || undefined)
+      : undefined;
 
-    // Background specification
-    const bgField = backgroundImageUrl || localBgBase64 || undefined;
+    // Background specification (only if not transparent)
+    const isTransparent = settings.backgroundType === 'transparent';
+    const bgField = !isTransparent
+      ? (backgroundImageUrl || localBgBase64 || undefined)
+      : undefined;
+
+    // Clean, pruned settings object ignoring useless parameters
+    const prunedSettings: Record<string, any> = {
+      style: settings.style,
+      barCount: settings.barCount,
+      barWidthRatio: settings.barWidthRatio,
+      barGap: settings.barGap,
+      barRadius: settings.barRadius,
+      heightScale: settings.heightScale,
+      sensitivity: settings.sensitivity,
+      softKneeCompression: settings.softKneeCompression,
+      smoothing: settings.smoothing,
+      easingMode: settings.easingMode,
+      invert: settings.invert,
+      normalize: settings.normalize,
+      glowIntensity: settings.glowIntensity,
+      backgroundType: settings.backgroundType,
+    };
+
+    // Symmetry: only relevant for mirrored-bars and bars-up
+    if (settings.style === 'mirrored-bars' || settings.style === 'bars-up') {
+      prunedSettings.symmetry = settings.symmetry;
+    }
+
+    // Radial specific parameters
+    if (settings.style === 'radial') {
+      prunedSettings.radialInnerRadius = settings.radialInnerRadius;
+      prunedSettings.radialRotation = settings.radialRotation;
+    }
+
+    // Solid/Custom background color (omit if transparent)
+    if (!isTransparent) {
+      prunedSettings.backgroundColor = settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor;
+    }
+
+    // Profile picture settings (omit completely if profile image is off)
+    if (settings.showProfileImage) {
+      prunedSettings.showProfileImage = true;
+      prunedSettings.profileImageShape = settings.profileImageShape;
+      prunedSettings.profileImageSize = settings.profileImageSize;
+      prunedSettings.profileImageXOffset = settings.profileImageXOffset;
+      prunedSettings.profileImageYOffset = settings.profileImageYOffset;
+      prunedSettings.profileBorderWidth = settings.profileBorderWidth;
+      prunedSettings.profileBorderColor = settings.profileBorderColor;
+      prunedSettings.profileAudioReactiveScale = settings.profileAudioReactiveScale;
+      prunedSettings.profileGlow = settings.profileGlow;
+      prunedSettings.sideSymmetry = settings.sideSymmetry;
+      if (settings.sideSymmetry !== 'none') {
+        prunedSettings.profileWingGap = settings.profileWingGap;
+      }
+    }
+
+    // Joint / tapering settings (omit if disabled)
+    if (settings.enableJoint) {
+      prunedSettings.enableJoint = true;
+      prunedSettings.jointAtEnds = settings.jointAtEnds;
+      if (settings.showProfileImage) {
+        prunedSettings.jointAtProfile = settings.jointAtProfile;
+      }
+      prunedSettings.jointWidth = settings.jointWidth;
+      prunedSettings.jointCurve = settings.jointCurve;
+    }
+
+    // Overlays: only include when enabled
+    if (settings.showDbGrid) prunedSettings.showDbGrid = true;
+    if (settings.showCenterLine) prunedSettings.showCenterLine = true;
+
+    // Track info: omit all text fields if track info is turned off
+    if (settings.showTrackInfo) {
+      prunedSettings.showTrackInfo = true;
+      prunedSettings.trackTitle = settings.trackTitle;
+      prunedSettings.artistName = settings.artistName;
+      prunedSettings.infoPosition = settings.infoPosition;
+    }
+
+    // Watermark: omit customWatermark text if watermark is turned off
+    if (settings.showWatermark) {
+      prunedSettings.showWatermark = true;
+      prunedSettings.customWatermark = settings.customWatermark;
+    }
+
+    // Canvas framing
+    prunedSettings.aspectRatio = settings.aspectRatio;
+    prunedSettings.padding = settings.padding;
+
+    // Gradient & Color Representation Mode
+    if (settings.enableGradient !== false) {
+      prunedSettings.enableGradient = true;
+      prunedSettings.colorMode = settings.colorMode || 'bottom-to-top';
+      prunedSettings.gradientColor = settings.useCustomColors
+        ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || '#38bdf8')
+        : (theme.gradientColor || theme.primaryGradientEnd || '#38bdf8');
+    } else {
+      prunedSettings.enableGradient = false;
+    }
+
+    // Theme object: clean of deprecated fields, only primary + optional gradient
+    const themeObj: Record<string, any> = {
+      id: theme.id,
+      name: theme.name,
+      primaryColor: settings.useCustomColors ? settings.primaryColor : theme.primaryColor,
+    };
+
+    if (settings.enableGradient !== false) {
+      themeObj.gradientColor = settings.useCustomColors
+        ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || '#38bdf8')
+        : (theme.gradientColor || theme.primaryGradientEnd || '#38bdf8');
+      themeObj.colorMode = settings.colorMode || 'bottom-to-top';
+    }
+
+    if (!isTransparent) {
+      themeObj.backgroundColor = settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor;
+    }
 
     return {
       audio: audioField,
@@ -183,60 +305,8 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
         format: exportConfig.format,
         duration: Math.round(exportConfig.duration * 100) / 100,
       },
-      settings: {
-        style: settings.style,
-        barCount: settings.barCount,
-        barWidthRatio: settings.barWidthRatio,
-        barGap: settings.barGap,
-        barRadius: settings.barRadius,
-        heightScale: settings.heightScale,
-        sensitivity: settings.sensitivity,
-        softKneeCompression: settings.softKneeCompression,
-        symmetry: settings.symmetry,
-        smoothing: settings.smoothing,
-        easingMode: settings.easingMode,
-        invert: settings.invert,
-        normalize: settings.normalize,
-        glowIntensity: settings.glowIntensity,
-        backgroundType: settings.backgroundType,
-        backgroundColor: settings.backgroundColor,
-        showProfileImage: settings.showProfileImage,
-        profileImageShape: settings.profileImageShape,
-        profileImageSize: settings.profileImageSize,
-        profileImageXOffset: settings.profileImageXOffset,
-        profileImageYOffset: settings.profileImageYOffset,
-        profileBorderWidth: settings.profileBorderWidth,
-        profileBorderColor: settings.profileBorderColor,
-        profileAudioReactiveScale: settings.profileAudioReactiveScale,
-        profileGlow: settings.profileGlow,
-        sideSymmetry: settings.sideSymmetry,
-        profileWingGap: settings.profileWingGap,
-        enableJoint: settings.enableJoint,
-        jointAtEnds: settings.jointAtEnds,
-        jointAtProfile: settings.jointAtProfile,
-        jointWidth: settings.jointWidth,
-        jointCurve: settings.jointCurve,
-        showTimeRuler: settings.showTimeRuler,
-        showDbGrid: settings.showDbGrid,
-        showCenterLine: settings.showCenterLine,
-        showTrackInfo: settings.showTrackInfo,
-        trackTitle: settings.trackTitle,
-        artistName: settings.artistName,
-        customWatermark: settings.customWatermark,
-        showWatermark: settings.showWatermark,
-        infoPosition: settings.infoPosition,
-        aspectRatio: settings.aspectRatio,
-        padding: settings.padding,
-      },
-      theme: {
-        id: theme.id,
-        name: theme.name,
-        primaryColor: settings.useCustomColors ? settings.primaryColor : theme.primaryColor,
-        primaryGradientEnd: settings.useCustomColors ? settings.primaryGradientEnd : theme.primaryGradientEnd,
-        progressColor: settings.useCustomColors ? settings.progressColor : theme.progressColor,
-        progressGradientEnd: settings.useCustomColors ? settings.progressGradientEnd : theme.progressGradientEnd,
-        backgroundColor: settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor,
-      },
+      settings: prunedSettings,
+      theme: themeObj,
       ...(profileField ? { profileImage: profileField } : {}),
       ...(bgField ? { backgroundImage: bgField } : {}),
     };

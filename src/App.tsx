@@ -33,6 +33,8 @@ export default function App() {
 
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
+  const [backgroundVideo, setBackgroundVideo] = useState<HTMLVideoElement | null>(null);
+  const [backgroundVideoUrl, setBackgroundVideoUrl] = useState<string | null>(null);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(10);
   const [backgroundDim, setBackgroundDim] = useState<number>(0.6);
 
@@ -273,9 +275,7 @@ export default function App() {
         ...prev,
         themeId,
         primaryColor: th.primaryColor,
-        primaryGradientEnd: th.primaryGradientEnd,
-        progressColor: th.progressColor,
-        progressGradientEnd: th.progressGradientEnd,
+        gradientColor: th.gradientColor,
         backgroundColor: th.backgroundColor,
       }));
     }
@@ -325,6 +325,8 @@ export default function App() {
             isPlaying={isPlaying}
             onSeek={handleSeek}
             backgroundImage={backgroundImage}
+            backgroundVideo={backgroundVideo}
+            backgroundVideoUrl={backgroundVideoUrl}
             backgroundBlur={backgroundBlur}
             backgroundDim={backgroundDim}
             profileImage={profileImage}
@@ -372,6 +374,12 @@ export default function App() {
             backgroundImage={backgroundImage}
             backgroundImageUrl={backgroundImageUrl}
             onBackgroundImageUrlChange={setBackgroundImageUrl}
+            onBackgroundVideoUpload={(vid, url) => {
+              setBackgroundVideo(vid);
+              setBackgroundVideoUrl(url);
+            }}
+            backgroundVideo={backgroundVideo}
+            backgroundVideoUrl={backgroundVideoUrl}
             backgroundBlur={backgroundBlur}
             onBackgroundBlurChange={setBackgroundBlur}
             backgroundDim={backgroundDim}
@@ -397,6 +405,8 @@ export default function App() {
         trimEnd={trimEnd}
         backgroundImage={backgroundImage}
         backgroundImageUrl={backgroundImageUrl}
+        backgroundVideo={backgroundVideo}
+        backgroundVideoUrl={backgroundVideoUrl}
         backgroundBlur={backgroundBlur}
         backgroundDim={backgroundDim}
         profileImage={profileImage}
