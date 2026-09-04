@@ -28,9 +28,6 @@ export default function App() {
   const [playbackRate, setPlaybackRate] = useState<number>(1.0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
 
-  const [trimStart, setTrimStart] = useState<number>(0);
-  const [trimEnd, setTrimEnd] = useState<number>(0);
-
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
   const [backgroundVideo, setBackgroundVideo] = useState<HTMLVideoElement | null>(null);
@@ -68,8 +65,6 @@ export default function App() {
         setWaveformData(result.waveform);
         setMetadata(result.metadata);
         setDuration(result.buffer.duration);
-        setTrimStart(0);
-        setTrimEnd(result.buffer.duration);
         setSettings((prev) => ({
           ...prev,
           trackTitle: result.metadata.fileName,
@@ -140,8 +135,6 @@ export default function App() {
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
       setCurrentTime(0);
-      setTrimStart(0);
-      setTrimEnd(result.buffer.duration);
       setSettings((prev) => ({
         ...prev,
         trackTitle: result.metadata.fileName,
@@ -168,8 +161,6 @@ export default function App() {
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
       setCurrentTime(0);
-      setTrimStart(0);
-      setTrimEnd(result.buffer.duration);
       setSettings((prev) => ({
         ...prev,
         trackTitle: result.metadata.fileName,
@@ -197,8 +188,6 @@ export default function App() {
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
       setCurrentTime(0);
-      setTrimStart(0);
-      setTrimEnd(result.buffer.duration);
       setSettings((prev) => ({
         ...prev,
         trackTitle: preset.name,
@@ -222,8 +211,6 @@ export default function App() {
     setMetadata(data.metadata);
     setDuration(data.buffer.duration);
     setCurrentTime(0);
-    setTrimStart(0);
-    setTrimEnd(data.buffer.duration);
     setSettings((prev) => ({
       ...prev,
       trackTitle: data.metadata.fileName,
@@ -255,11 +242,6 @@ export default function App() {
     const next = !isLooping;
     setIsLooping(next);
     audioEngine.setLoop(next);
-  };
-
-  const handleTrimChange = (start: number, end: number) => {
-    setTrimStart(start);
-    setTrimEnd(end);
   };
 
   // Settings & Theme Handlers
@@ -346,14 +328,11 @@ export default function App() {
             volume={volume}
             playbackRate={playbackRate}
             isLooping={isLooping}
-            trimStart={trimStart}
-            trimEnd={trimEnd}
             onTogglePlay={handleTogglePlay}
             onSeek={handleSeek}
             onVolumeChange={handleVolumeChange}
             onPlaybackRateChange={handlePlaybackRateChange}
             onToggleLoop={handleToggleLoop}
-            onTrimChange={handleTrimChange}
           />
         </section>
 
@@ -402,8 +381,6 @@ export default function App() {
         waveformData={waveformData}
         settings={settings}
         theme={theme}
-        trimStart={trimStart}
-        trimEnd={trimEnd}
         backgroundImage={backgroundImage}
         backgroundImageUrl={backgroundImageUrl}
         backgroundVideo={backgroundVideo}

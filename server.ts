@@ -85,14 +85,13 @@ async function startServer() {
           height: 1080,
           fps: 30,
           format: 'mp4',
-          duration: 15,
         },
         profileImage: 'data:image/png;base64,... (optional)',
         backgroundImage: 'data:image/jpeg;base64,... (optional)',
       },
       curlExample: `curl -X POST http://localhost:3000/api/render-video \\
   -H "Content-Type: application/json" \\
-  -d '{"video": {"width": 1280, "height": 720, "duration": 5, "format": "mp4"}}' \\
+  -d '{"video": {"width": 1280, "height": 720, "format": "mp4"}}' \\
   --output visualizer.mp4`,
       defaultSettings: DEFAULT_SETTINGS,
       availableThemes: COLOR_THEMES.map((t) => ({ id: t.id, name: t.name, primaryColor: t.primaryColor })),

@@ -6,8 +6,6 @@ import {
   Repeat,
   Volume2,
   VolumeX,
-  Scissors,
-  Gauge,
 } from 'lucide-react';
 import { WaveformData } from '../types';
 
@@ -19,14 +17,14 @@ interface AudioControlsProps {
   volume: number;
   playbackRate: number;
   isLooping: boolean;
-  trimStart: number;
-  trimEnd: number;
+  trimStart?: number;
+  trimEnd?: number;
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (vol: number) => void;
   onPlaybackRateChange: (rate: number) => void;
   onToggleLoop: () => void;
-  onTrimChange: (start: number, end: number) => void;
+  onTrimChange?: (start: number, end: number) => void;
 }
 
 export const AudioControls: React.FC<AudioControlsProps> = ({
@@ -37,18 +35,13 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   volume,
   playbackRate,
   isLooping,
-  trimStart,
-  trimEnd,
   onTogglePlay,
   onSeek,
   onVolumeChange,
   onPlaybackRateChange,
   onToggleLoop,
-  onTrimChange,
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  const [showTrimModal, setShowTrimModal] = useState(false);
 
   const formatTime = (secs: number) => {
     if (!secs || isNaN(secs) || secs < 0) return '0:00';
@@ -66,8 +59,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   };
 
   const progressFraction = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
-  const trimStartFraction = duration > 0 ? Math.max(0, Math.min(1, trimStart / duration)) : 0;
-  const trimEndFraction = duration > 0 ? Math.max(0, Math.min(1, trimEnd / duration)) : 1;
 
   return (
     <div
@@ -82,20 +73,9 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             <span className="text-neutral-600">/</span>
             <span>{formatTime(duration)}</span>
           </div>
-
-          {/* Trim badge */}
-          {(trimStart > 0 || (duration > 0 && trimEnd < duration)) && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400 font-mono">
-              <Scissors className="w-3 h-3" />
-              <span>Export Trim: {formatTime(trimStart)} - {formatTime(trimEnd)} ({Math.round(trimEnd - trimStart)}s)</span>
-              <button
-                onClick={() => onTrimChange(0, duration)}
-                className="ml-1 text-neutral-400 hover:text-white underline cursor-pointer"
-              >
-                Reset
-              </button>
-            </div>
-          )}
+          <div className="text-[11px] text-neutral-500 font-sans">
+            Click anywhere on waveform to scrub
+          </div>
         </div>
 
         {/* Interactive Waveform Bar Overview */}
@@ -111,7 +91,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
               waveformData.peaks.slice(0, 160).map((peak, idx) => {
                 const barFraction = idx / Math.min(160, waveformData.peaks.length);
                 const isPlayed = barFraction <= progressFraction;
-                const isInsideTrim = barFraction >= trimStartFraction && barFraction <= trimEndFraction;
 
                 return (
                   <div
@@ -119,12 +98,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
                     className="flex-1 rounded-full transition-all"
                     style={{
                       height: `${Math.max(8, peak * 88)}%`,
-                      backgroundColor: isPlayed
-                        ? '#38bdf8'
-                        : isInsideTrim
-                        ? '#64748b'
-                        : '#334155',
-                      opacity: isInsideTrim ? (isPlayed ? 1 : 0.65) : 0.25,
+                      backgroundColor: isPlayed ? '#38bdf8' : '#334155',
+                      opacity: isPlayed ? 1 : 0.4,
                     }}
                   />
                 );
@@ -135,30 +110,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
               </div>
             )}
           </div>
-
-          {/* Trim Highlights */}
-          {duration > 0 && (
-            <>
-              {/* Dimmed Left Mask */}
-              <div
-                className="absolute top-0 bottom-0 left-0 bg-black/60 pointer-events-none"
-                style={{ width: `${trimStartFraction * 100}%` }}
-              />
-              {/* Dimmed Right Mask */}
-              <div
-                className="absolute top-0 bottom-0 right-0 bg-black/60 pointer-events-none"
-                style={{ width: `${(1 - trimEndFraction) * 100}%` }}
-              />
-              {/* Active Trim Window Border */}
-              <div
-                className="absolute top-0 bottom-0 border-x-2 border-amber-400/80 bg-amber-400/5 pointer-events-none"
-                style={{
-                  left: `${trimStartFraction * 100}%`,
-                  width: `${(trimEndFraction - trimStartFraction) * 100}%`,
-                }}
-              />
-            </>
-          )}
 
           {/* Scrub Playhead Cursor */}
           <div
@@ -207,21 +158,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           >
             <Repeat className="w-4 h-4" />
           </button>
-
-          {/* Trim Range Editor Toggle */}
-          <button
-            id="audio-trim-toggle-btn"
-            onClick={() => setShowTrimModal(!showTrimModal)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-              showTrimModal
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300'
-            }`}
-            title="Set export trim range"
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Trim Range</span>
-          </button>
         </div>
 
         {/* Right: Volume & Playback Rate */}
@@ -266,50 +202,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Trim Range Sliders Panel (collapsible) */}
-      {showTrimModal && duration > 0 && (
-        <div className="mt-2 p-3 bg-neutral-950/90 rounded-xl border border-neutral-800 flex flex-col sm:flex-row items-center gap-4 text-xs animate-fadeIn">
-          <div className="flex-1 w-full flex items-center gap-3">
-            <div className="w-20 shrink-0 font-medium text-neutral-300">
-              Start: <span className="font-mono text-cyan-400">{formatTime(trimStart)}</span>
-            </div>
-            <input
-              id="trim-start-range"
-              type="range"
-              min="0"
-              max={Math.max(0, trimEnd - 1)}
-              step="0.1"
-              value={trimStart}
-              onChange={(e) => onTrimChange(parseFloat(e.target.value), trimEnd)}
-              className="flex-1 h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
-            />
-          </div>
-
-          <div className="flex-1 w-full flex items-center gap-3">
-            <div className="w-20 shrink-0 font-medium text-neutral-300">
-              End: <span className="font-mono text-amber-400">{formatTime(trimEnd)}</span>
-            </div>
-            <input
-              id="trim-end-range"
-              type="range"
-              min={trimStart + 1}
-              max={duration}
-              step="0.1"
-              value={trimEnd}
-              onChange={(e) => onTrimChange(trimStart, parseFloat(e.target.value))}
-              className="flex-1 h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
-            />
-          </div>
-
-          <button
-            onClick={() => onTrimChange(0, duration)}
-            className="px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-medium cursor-pointer"
-          >
-            Full Track
-          </button>
-        </div>
-      )}
     </div>
   );
 };

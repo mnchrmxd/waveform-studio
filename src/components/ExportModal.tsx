@@ -36,8 +36,8 @@ interface ExportModalProps {
   waveformData: WaveformData | null;
   settings: VisualizerSettings;
   theme: ColorTheme;
-  trimStart: number;
-  trimEnd: number;
+  trimStart?: number;
+  trimEnd?: number;
   backgroundImage?: HTMLImageElement | null;
   backgroundImageUrl?: string | null;
   backgroundVideo?: HTMLVideoElement | null;
@@ -57,8 +57,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   waveformData,
   settings,
   theme,
-  trimStart,
-  trimEnd,
   backgroundImage,
   backgroundImageUrl,
   backgroundVideo,
@@ -77,7 +75,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [fps, setFps] = useState<30 | 60>(60);
   const [videoBitrate, setVideoBitrate] = useState<number>(8_000_000); // 8 Mbps
   const [audioBitrate] = useState<number>(192_000); // 192 kbps
-  const [useTrim, setUseTrim] = useState<boolean>(false);
   const [isPayloadModalOpen, setIsPayloadModalOpen] = useState<boolean>(false);
 
   // Direct element visibility toggles for export
@@ -118,9 +115,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   if (!isOpen) return null;
 
   const duration = audioBuffer?.duration || 0;
-  const activeStart = useTrim ? trimStart : 0;
-  const activeEnd = useTrim ? trimEnd : duration;
-  const exportDuration = Math.max(0.1, activeEnd - activeStart);
+  const activeStart = 0;
+  const activeEnd = duration;
+  const exportDuration = duration;
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -511,27 +508,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               </div>
 
-              {/* Time Range Selection */}
+              {/* Full Audio Track Indicator */}
               <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                  <span className="font-medium text-neutral-300">Export Length:</span>
-                  <span className="font-mono text-white">{formatTime(exportDuration)}</span>
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  <span className="font-medium text-neutral-300">Audio Track Length:</span>
+                  <span className="font-mono text-white">{formatTime(duration)}</span>
                 </div>
-
-                {trimEnd < duration || trimStart > 0 ? (
-                  <label className="flex items-center gap-2 cursor-pointer text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={useTrim}
-                      onChange={(e) => setUseTrim(e.target.checked)}
-                      className="rounded accent-cyan-400"
-                    />
-                    <span>Use Trimmed Selection</span>
-                  </label>
-                ) : (
-                  <span className="text-neutral-500 font-mono">Full Audio</span>
-                )}
+                <span className="text-neutral-400 text-[11px] font-medium px-2 py-0.5 rounded bg-neutral-800/80 border border-neutral-700/60">
+                  Full Track
+                </span>
               </div>
 
               {/* Visual Overlays & Elements in Export */}
@@ -885,10 +871,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             height: getExportDimensions().height,
             fps,
             format: format === 'webm-alpha' || format === 'webm' ? 'webm' : 'mp4',
-            duration: exportDuration,
-            trimStart: activeStart,
-            trimEnd: activeEnd,
-            useTrim,
           }}
           audioBuffer={audioBuffer}
           audioUrl={audioUrl}

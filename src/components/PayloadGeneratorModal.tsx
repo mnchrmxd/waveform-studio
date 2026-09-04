@@ -23,10 +23,10 @@ export interface ExportConfiguration {
   height: number;
   fps: number;
   format: 'mp4' | 'webm';
-  duration: number;
-  trimStart: number;
-  trimEnd: number;
-  useTrim: boolean;
+  duration?: number;
+  trimStart?: number;
+  trimEnd?: number;
+  useTrim?: boolean;
 }
 
 interface PayloadGeneratorModalProps {
@@ -85,8 +85,8 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
           try {
             const wavBlob = audioBufferToWavBlob(
               audioBuffer,
-              exportConfig.useTrim ? exportConfig.trimStart : 0,
-              exportConfig.useTrim ? exportConfig.trimEnd : audioBuffer.duration
+              0,
+              audioBuffer.duration
             );
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -303,7 +303,6 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
         height: exportConfig.height,
         fps: exportConfig.fps,
         format: exportConfig.format,
-        duration: Math.round(exportConfig.duration * 100) / 100,
       },
       settings: prunedSettings,
       theme: themeObj,
@@ -559,7 +558,7 @@ renderVisualizer().catch(console.error);`;
             🎞️ {exportConfig.format}
           </span>
           <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
-            ⏱️ {exportConfig.duration.toFixed(1)}s
+            🎵 {audioBuffer ? `Full Audio (${audioBuffer.duration.toFixed(1)}s)` : 'Full Audio Track'}
           </span>
           <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
             📊 {settings.style} ({settings.barCount} bars)
