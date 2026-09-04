@@ -200,6 +200,14 @@ export async function renderHeadlessVideo(
       ...(options.settings || {}),
     };
 
+    // Explicit boolean overrides
+    if (options.settings && typeof options.settings.showTrackInfo === 'boolean') {
+      mergedSettings.showTrackInfo = options.settings.showTrackInfo;
+    }
+    if (options.settings && typeof options.settings.showProfileImage === 'boolean') {
+      mergedSettings.showProfileImage = options.settings.showProfileImage;
+    }
+
     let selectedTheme: ColorTheme = COLOR_THEMES[0];
     if (typeof options.theme === 'string') {
       const found = COLOR_THEMES.find((t) => t.id === options.theme);

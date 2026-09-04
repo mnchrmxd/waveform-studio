@@ -217,9 +217,9 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
       prunedSettings.backgroundColor = settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor;
     }
 
-    // Profile picture settings (omit completely if profile image is off)
+    // Profile picture settings (always output boolean flag so backend doesn't fall back to defaults)
+    prunedSettings.showProfileImage = Boolean(settings.showProfileImage);
     if (settings.showProfileImage) {
-      prunedSettings.showProfileImage = true;
       prunedSettings.profileImageShape = settings.profileImageShape;
       prunedSettings.profileImageSize = settings.profileImageSize;
       prunedSettings.profileImageXOffset = settings.profileImageXOffset;
@@ -249,9 +249,9 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
     if (settings.showDbGrid) prunedSettings.showDbGrid = true;
     if (settings.showCenterLine) prunedSettings.showCenterLine = true;
 
-    // Track info: omit all text fields if track info is turned off
+    // Track info: always output boolean flag so backend doesn't fall back to defaults
+    prunedSettings.showTrackInfo = Boolean(settings.showTrackInfo);
     if (settings.showTrackInfo) {
-      prunedSettings.showTrackInfo = true;
       prunedSettings.trackTitle = settings.trackTitle;
       prunedSettings.artistName = settings.artistName;
       prunedSettings.infoPosition = settings.infoPosition;

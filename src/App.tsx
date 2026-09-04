@@ -334,6 +334,7 @@ export default function App() {
             onDropAudioFile={handleFileUpload}
             onToggleProfile={() => handleSettingsChange({ showProfileImage: !settings.showProfileImage })}
             onToggleJoint={() => handleSettingsChange({ enableJoint: !settings.enableJoint })}
+            onToggleTrackInfo={() => handleSettingsChange({ showTrackInfo: !settings.showTrackInfo })}
           />
 
           {/* Audio Playback Timeline & Transport Controls */}
@@ -411,6 +412,7 @@ export default function App() {
         backgroundDim={backgroundDim}
         profileImage={profileImage}
         profileImageUrl={profileImageUrl}
+        onSettingsChange={handleSettingsChange}
       />
 
       {/* Demo Tracks Modal */}

@@ -673,6 +673,7 @@ export class FastHeadlessVideoExporter {
     const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
     const barCount = config.settings.barCount || 100;
     const totalFrames = Math.max(1, Math.ceil(duration * fps));
+    const isAlphaExport = Boolean(config.exportAlpha || config.settings.backgroundType === 'transparent');
 
     return new Promise((resolve, reject) => {
       let animId: number;
@@ -778,9 +779,12 @@ export class FastHeadlessVideoExporter {
           isPlaying: true,
           spectrum,
           waveformData,
-          settings: { ...config.settings, backgroundType: 'transparent' },
+          settings: isAlphaExport ? { ...config.settings, backgroundType: 'transparent' } : config.settings,
           theme: config.theme,
-          backgroundImage: null,
+          backgroundImage: isAlphaExport ? null : config.backgroundImage,
+          backgroundVideo: isAlphaExport ? null : config.backgroundVideo,
+          backgroundBlur: isAlphaExport ? 0 : config.backgroundBlur,
+          backgroundDim: isAlphaExport ? 0 : config.backgroundDim,
           profileImage: config.profileImage,
           isExport: true,
         });
@@ -841,6 +845,7 @@ export class FastHeadlessVideoExporter {
 
     const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
     const barCount = config.settings.barCount || 100;
+    const isAlphaExport = Boolean(config.exportAlpha || config.settings.backgroundType === 'transparent');
 
     let canvas: HTMLCanvasElement | OffscreenCanvas;
     let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -890,9 +895,12 @@ export class FastHeadlessVideoExporter {
         isPlaying: true,
         spectrum,
         waveformData,
-        settings: { ...config.settings, backgroundType: 'transparent' },
+        settings: isAlphaExport ? { ...config.settings, backgroundType: 'transparent' } : config.settings,
         theme: config.theme,
-        backgroundImage: null,
+        backgroundImage: isAlphaExport ? null : config.backgroundImage,
+        backgroundVideo: isAlphaExport ? null : config.backgroundVideo,
+        backgroundBlur: isAlphaExport ? 0 : config.backgroundBlur,
+        backgroundDim: isAlphaExport ? 0 : config.backgroundDim,
         profileImage: config.profileImage,
         isExport: true,
       });

@@ -13,6 +13,9 @@ import {
   Server,
   Code2,
   Terminal,
+  Type,
+  User,
+  Grid,
 } from 'lucide-react';
 import {
   fastVideoExporter,
@@ -43,6 +46,7 @@ interface ExportModalProps {
   backgroundDim?: number;
   profileImage?: HTMLImageElement | null;
   profileImageUrl?: string | null;
+  onSettingsChange?: (newSettings: Partial<VisualizerSettings>) => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -63,6 +67,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   backgroundDim,
   profileImage,
   profileImageUrl,
+  onSettingsChange,
 }) => {
   const [resolution, setResolution] = useState<ExportResolution>('1080p');
   const [format, setFormat] = useState<ExportFormat>('mp4');
@@ -74,6 +79,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [audioBitrate] = useState<number>(192_000); // 192 kbps
   const [useTrim, setUseTrim] = useState<boolean>(false);
   const [isPayloadModalOpen, setIsPayloadModalOpen] = useState<boolean>(false);
+
+  // Direct element visibility toggles for export
+  const [effectiveTrackInfo, setEffectiveTrackInfo] = useState<boolean>(Boolean(settings.showTrackInfo));
+  const [effectiveProfileImage, setEffectiveProfileImage] = useState<boolean>(Boolean(settings.showProfileImage));
+  const [effectiveDbGrid, setEffectiveDbGrid] = useState<boolean>(Boolean(settings.showDbGrid));
+
+  useEffect(() => {
+    if (isOpen) {
+      setEffectiveTrackInfo(Boolean(settings.showTrackInfo));
+      setEffectiveProfileImage(Boolean(settings.showProfileImage));
+      setEffectiveDbGrid(Boolean(settings.showDbGrid));
+      setExportAlpha(settings.backgroundType === 'transparent');
+    }
+  }, [isOpen, settings.showTrackInfo, settings.showProfileImage, settings.showDbGrid, settings.backgroundType]);
 
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
@@ -161,6 +180,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setErrorMessage(null);
     setExportResult(null);
 
+    const exportSettings: VisualizerSettings = {
+      ...settings,
+      showTrackInfo: effectiveTrackInfo,
+      showProfileImage: effectiveProfileImage,
+      showDbGrid: effectiveDbGrid,
+      backgroundType: exportAlpha ? 'transparent' : settings.backgroundType,
+    };
+
     const config: ExportConfig = {
       resolution,
       fps,
@@ -170,13 +197,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       exportAlpha,
       trimStart: activeStart,
       trimEnd: activeEnd,
-      settings: exportAlpha ? { ...settings, backgroundType: 'transparent' } : settings,
+      settings: exportSettings,
       theme,
       backgroundImage: exportAlpha ? null : backgroundImage,
       backgroundVideo: exportAlpha ? null : backgroundVideo,
       backgroundBlur: exportAlpha ? 0 : backgroundBlur,
       backgroundDim: exportAlpha ? 0 : backgroundDim,
-      profileImage,
+      profileImage: effectiveProfileImage ? profileImage : null,
     };
 
     try {
@@ -505,6 +532,91 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 ) : (
                   <span className="text-neutral-500 font-mono">Full Audio</span>
                 )}
+              </div>
+
+              {/* Visual Overlays & Elements in Export */}
+              <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-300">Visual Overlays & Elements</span>
+                  <span className="text-[11px] text-neutral-500">Toggle export components</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* Track Info Overlay Toggle */}
+                  <label
+                    id="export-toggle-track-info"
+                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                      effectiveTrackInfo
+                        ? 'bg-indigo-950/40 border-indigo-500/50 text-indigo-200'
+                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate mr-1">
+                      <Type className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <span className="truncate font-medium">Track Info</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={effectiveTrackInfo}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEffectiveTrackInfo(checked);
+                        onSettingsChange?.({ showTrackInfo: checked });
+                      }}
+                      className="rounded accent-indigo-500 shrink-0"
+                    />
+                  </label>
+
+                  {/* Profile Avatar Toggle */}
+                  <label
+                    id="export-toggle-profile-avatar"
+                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                      effectiveProfileImage
+                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate mr-1">
+                      <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="truncate font-medium">Profile Pic</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={effectiveProfileImage}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEffectiveProfileImage(checked);
+                        onSettingsChange?.({ showProfileImage: checked });
+                      }}
+                      className="rounded accent-amber-500 shrink-0"
+                    />
+                  </label>
+
+                  {/* dB Grid Toggle */}
+                  <label
+                    id="export-toggle-db-grid"
+                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                      effectiveDbGrid
+                        ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-200'
+                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate mr-1">
+                      <Grid className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="truncate font-medium">dB Grid</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={effectiveDbGrid}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEffectiveDbGrid(checked);
+                        onSettingsChange?.({ showDbGrid: checked });
+                      }}
+                      className="rounded accent-cyan-500 shrink-0"
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Backdrop Summary Status */}

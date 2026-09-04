@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Maximize2, Minimize2, Image as ImageIcon, Sparkles, RefreshCw, User, Split } from 'lucide-react';
+import { Maximize2, Minimize2, Image as ImageIcon, Sparkles, RefreshCw, User, Split, Type } from 'lucide-react';
 import { AspectRatioType, ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { OfflineAudioAnalyzer, SpectrumData } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
@@ -24,6 +24,7 @@ interface VisualizerCanvasProps {
   onDropAudioFile?: (file: File) => void;
   onToggleProfile?: () => void;
   onToggleJoint?: () => void;
+  onToggleTrackInfo?: () => void;
 }
 
 export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
@@ -44,6 +45,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
   onDropAudioFile,
   onToggleProfile,
   onToggleJoint,
+  onToggleTrackInfo,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -382,6 +384,32 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
                 Joint:{' '}
                 <strong className={settings.enableJoint ? 'text-cyan-300 font-bold' : 'text-neutral-500'}>
                   {settings.enableJoint ? 'ON' : 'OFF'}
+                </strong>
+              </span>
+            </button>
+          )}
+
+          {/* Quick Track Info Toggle directly on Preview Stage */}
+          {onToggleTrackInfo && (
+            <button
+              id="preview-quick-toggle-trackinfo-btn"
+              onClick={onToggleTrackInfo}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-all shadow-lg cursor-pointer border ${
+                settings.showTrackInfo
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50 hover:bg-indigo-500/30'
+                  : 'bg-neutral-900/80 text-neutral-400 border-neutral-800 hover:text-neutral-200 hover:bg-neutral-800'
+              }`}
+              title={
+                settings.showTrackInfo
+                  ? 'Track Info Active: Click to hide track title & artist overlay'
+                  : 'Track Info Hidden: Click to display track title & artist overlay'
+              }
+            >
+              <Type className="w-3.5 h-3.5 text-indigo-400" />
+              <span>
+                Track Info:{' '}
+                <strong className={settings.showTrackInfo ? 'text-indigo-300 font-bold' : 'text-neutral-500'}>
+                  {settings.showTrackInfo ? 'ON' : 'OFF'}
                 </strong>
               </span>
             </button>

@@ -363,16 +363,31 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
     }
   }
 
-  // 3. Grid & Center line
+  // 3. Resolution Scaling Factor
+  // Reference base dimension: preview canvas authored at min dimension = 720 (720p height in 16:9/1:1, or 720p width in 9:16)
+  const baseDim = Math.min(width, height);
+  const resScale = Math.max(0.25, baseDim / 720);
+
+  // Scaled settings for resolution-independent rendering
+  const scaledSettings: VisualizerSettings = {
+    ...settings,
+    profileImageSize: (settings.profileImageSize || 130) * resScale,
+    profileBorderWidth: (settings.profileBorderWidth ?? 4) * resScale,
+    profileWingGap: (settings.profileWingGap ?? 16) * resScale,
+    padding: (settings.padding || 32) * resScale,
+    jointWidth: (settings.jointWidth || 60) * resScale,
+  };
+
+  // 4. Grid & Center line
   if (settings.showDbGrid) {
-    renderDbGrid(ctx, width, height, theme);
+    renderDbGrid(ctx, width, height, theme, resScale);
   }
   if (settings.showCenterLine && settings.style !== 'radial') {
-    renderCenterLine(ctx, width, height, settings, theme);
+    renderCenterLine(ctx, width, height, scaledSettings, theme, resScale);
   }
 
-  // 4. Calculate Waveform & Profile Bounds
-  const padding = settings.padding || 32;
+  // 5. Calculate Waveform & Profile Bounds
+  const padding = scaledSettings.padding || 32;
   const drawWidth = Math.max(10, width - padding * 2);
   const drawHeight = Math.max(10, height - padding * 2);
   const drawX = padding;
@@ -381,13 +396,13 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
   const cy = height / 2;
 
   // Profile Image Anchor Point (can be moved horizontally with X-Offset and vertically with Y-Offset)
-  const xOffsetRatio = (settings.profileImageXOffset || 0) / 100;
-  const yOffsetRatio = (settings.profileImageYOffset || 0) / 100;
+  const xOffsetRatio = (scaledSettings.profileImageXOffset || 0) / 100;
+  const yOffsetRatio = (scaledSettings.profileImageYOffset || 0) / 100;
   const avatarX = cx + drawWidth * xOffsetRatio;
   const avatarY = cy + drawHeight * yOffsetRatio;
-  const isProfileActive = Boolean(settings.showProfileImage);
+  const isProfileActive = Boolean(scaledSettings.showProfileImage);
 
-  // 5. Render Main Waveform
+  // 6. Render Main Waveform
   switch (settings.style) {
     case 'bars-up':
       renderBarsUp(
@@ -397,7 +412,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         drawWidth,
         drawHeight,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         time,
         duration,
@@ -414,7 +429,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         drawWidth,
         drawHeight,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         time,
         duration,
@@ -430,7 +445,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         isProfileActive ? avatarY : cy,
         Math.min(drawWidth, drawHeight) / 2,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         time
       );
@@ -443,7 +458,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         drawWidth,
         drawHeight,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         isProfileActive,
         avatarX,
@@ -458,7 +473,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         drawWidth,
         drawHeight,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         time,
         isProfileActive,
@@ -467,7 +482,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
       );
       break;
     case 'spectrum-bands':
-      renderSpectrumBands(ctx, drawX, drawY, drawWidth, drawHeight, spectrum, settings, theme);
+      renderSpectrumBands(ctx, drawX, drawY, drawWidth, drawHeight, spectrum, scaledSettings, theme);
       break;
     case 'mirrored-bars':
     default:
@@ -478,7 +493,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
         drawWidth,
         drawHeight,
         spectrum,
-        settings,
+        scaledSettings,
         theme,
         time,
         duration,
@@ -489,30 +504,31 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
       break;
   }
 
-  // 6. Render Profile Image / Avatar on Top
+  // 7. Render Profile Image / Avatar on Top
   if (isProfileActive) {
     renderProfileImage(
       ctx,
       avatarX,
       avatarY,
-      settings.profileImageSize || 130,
-      settings.profileImageShape || 'circle',
-      settings.profileBorderWidth ?? 4,
-      settings.profileBorderColor || '#ffffff',
-      settings.profileGlow ?? true,
-      settings.profileAudioReactiveScale ?? true,
+      scaledSettings.profileImageSize || (130 * resScale),
+      scaledSettings.profileImageShape || 'circle',
+      scaledSettings.profileBorderWidth ?? (4 * resScale),
+      scaledSettings.profileBorderColor || '#ffffff',
+      scaledSettings.profileGlow ?? true,
+      scaledSettings.profileAudioReactiveScale ?? true,
       spectrum,
       theme,
-      profileImage
+      profileImage,
+      resScale
     );
   }
 
-  // 7. Overlays (Ruler & Playhead deprecated)
+  // 8. Overlays
   if (settings.showTrackInfo) {
-    renderTrackOverlay(ctx, width, height, padding, settings, theme, time, duration);
+    renderTrackOverlay(ctx, width, height, padding, settings, theme, time, duration, resScale);
   }
   if (settings.showWatermark && settings.customWatermark) {
-    renderWatermark(ctx, width, height, padding, settings.customWatermark);
+    renderWatermark(ctx, width, height, padding, settings.customWatermark, resScale);
   }
 
   ctx.restore();
@@ -522,12 +538,13 @@ function renderDbGrid(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   width: number,
   height: number,
-  theme: ColorTheme
+  theme: ColorTheme,
+  resScale: number = 1
 ): void {
   ctx.save();
   ctx.strokeStyle = theme.gridColor || 'rgba(255, 255, 255, 0.07)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = Math.max(1, 1 * resScale);
+  ctx.setLineDash([Math.round(4 * resScale), Math.round(4 * resScale)]);
 
   const lines = 6;
   ctx.beginPath();
@@ -546,12 +563,13 @@ function renderCenterLine(
   width: number,
   height: number,
   settings: VisualizerSettings,
-  theme: ColorTheme
+  theme: ColorTheme,
+  resScale: number = 1
 ): void {
   ctx.save();
   const centerY = height / 2;
   ctx.strokeStyle = hexToRgba(theme.primaryColor, 0.25);
-  ctx.lineWidth = 1;
+  ctx.lineWidth = Math.max(1, 1 * resScale);
   ctx.beginPath();
   ctx.moveTo(settings.padding || 32, centerY);
   ctx.lineTo(width - (settings.padding || 32), centerY);
@@ -1409,11 +1427,12 @@ function renderProfileImage(
   reactiveScale: boolean,
   spectrum: SpectrumData,
   theme: ColorTheme,
-  image?: HTMLImageElement | ImageBitmap | null
+  image?: HTMLImageElement | ImageBitmap | null,
+  resScale: number = 1
 ): void {
   const bass = spectrum.bassEnergy || 0;
   const pulseScale = reactiveScale ? 1 + bass * 0.08 : 1;
-  const currentSize = Math.max(30, size * pulseScale);
+  const currentSize = Math.max(30 * resScale, size * pulseScale);
   const r = currentSize / 2;
 
   ctx.save();
@@ -1422,8 +1441,8 @@ function renderProfileImage(
   // 1. Base Drop Shadow
   if (glow) {
     ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 6;
+    ctx.shadowBlur = 18 * resScale;
+    ctx.shadowOffsetY = 6 * resScale;
   }
 
   // 3. Clipped Avatar Image / Placeholder
@@ -1432,7 +1451,7 @@ function renderProfileImage(
   if (shape === 'circle') {
     ctx.arc(imgX, imgY, r, 0, Math.PI * 2);
   } else if (shape === 'rounded') {
-    roundRectPath(ctx, imgX - r, imgY - r, currentSize, currentSize, Math.min(28, currentSize * 0.22));
+    roundRectPath(ctx, imgX - r, imgY - r, currentSize, currentSize, Math.min(28 * resScale, currentSize * 0.22));
   } else {
     ctx.rect(imgX - r, imgY - r, currentSize, currentSize);
   }
@@ -1470,14 +1489,14 @@ function renderProfileImage(
     ctx.fillRect(imgX - r, imgY - r, currentSize, currentSize);
 
     // Decorative Audio Bars inside Avatar Placeholder
-    const innerBarW = Math.max(3, currentSize * 0.07);
+    const innerBarW = Math.max(3 * resScale, currentSize * 0.07);
     const innerBars = 5;
     const innerTotalW = innerBars * innerBarW * 1.8;
     const startInnerX = imgX - innerTotalW / 2;
     ctx.fillStyle = '#ffffff';
     for (let bi = 0; bi < innerBars; bi++) {
       const bhFactor = [0.4, 0.8, 1.0, 0.7, 0.45][bi];
-      const bh = Math.max(6, currentSize * 0.38 * bhFactor * (0.8 + bass * 0.4));
+      const bh = Math.max(6 * resScale, currentSize * 0.38 * bhFactor * (0.8 + bass * 0.4));
       const bx = startInnerX + bi * (innerBarW * 1.8);
       roundRectPath(ctx, bx, imgY - bh / 2, innerBarW, bh, innerBarW / 2);
     }
@@ -1492,7 +1511,7 @@ function renderProfileImage(
     if (shape === 'circle') {
       ctx.arc(imgX, imgY, r, 0, Math.PI * 2);
     } else if (shape === 'rounded') {
-      roundRectPath(ctx, imgX - r, imgY - r, currentSize, currentSize, Math.min(28, currentSize * 0.22));
+      roundRectPath(ctx, imgX - r, imgY - r, currentSize, currentSize, Math.min(28 * resScale, currentSize * 0.22));
     } else {
       ctx.rect(imgX - r, imgY - r, currentSize, currentSize);
     }
@@ -1502,7 +1521,7 @@ function renderProfileImage(
     ctx.lineWidth = borderWidth;
     if (glow) {
       ctx.shadowColor = finalBorderColor;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 10 * resScale;
     }
     ctx.stroke();
     ctx.restore();
@@ -2046,7 +2065,8 @@ function renderTrackOverlay(
   settings: VisualizerSettings,
   theme: ColorTheme,
   time: number,
-  duration: number
+  duration: number,
+  resScale: number = 1
 ): void {
   ctx.save();
 
@@ -2058,17 +2078,22 @@ function renderTrackOverlay(
   const isCenter = settings.infoPosition === 'center-top';
 
   const tx = isCenter ? width / 2 : isRight ? width - padding : padding;
-  const ty = isTop ? padding + 24 : height - padding - 36;
+  const titleSize = Math.max(14, Math.round(22 * resScale));
+  const artistSize = Math.max(10, Math.round(13 * resScale));
+  const vOffset = Math.round(24 * resScale);
+  const artistSpacing = Math.round(20 * resScale);
+
+  const ty = isTop ? padding + vOffset : height - padding - Math.round(36 * resScale);
 
   ctx.textAlign = isCenter ? 'center' : isRight ? 'right' : 'left';
 
-  ctx.font = '700 22px "Plus Jakarta Sans", sans-serif';
+  ctx.font = `700 ${titleSize}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 4;
+  ctx.shadowBlur = Math.round(4 * resScale);
   ctx.fillText(title, tx, ty);
 
-  ctx.font = '500 13px "Plus Jakarta Sans", sans-serif';
+  ctx.font = `500 ${artistSize}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillStyle = theme.accentColor || theme.primaryColor || '#38bdf8';
   const curMin = Math.floor(time / 60);
   const curSec = Math.floor(time % 60)
@@ -2079,7 +2104,7 @@ function renderTrackOverlay(
     .toString()
     .padStart(2, '0');
 
-  ctx.fillText(`${artist} • ${curMin}:${curSec} / ${durMin}:${durSec}`, tx, ty + 20);
+  ctx.fillText(`${artist} • ${curMin}:${curSec} / ${durMin}:${durSec}`, tx, ty + artistSpacing);
 
   ctx.restore();
 }
@@ -2089,10 +2114,12 @@ function renderWatermark(
   width: number,
   height: number,
   padding: number,
-  text: string
+  text: string,
+  resScale: number = 1
 ): void {
   ctx.save();
-  ctx.font = '600 11px "JetBrains Mono", monospace';
+  const fontSize = Math.max(9, Math.round(11 * resScale));
+  ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.textAlign = 'right';
   ctx.fillText(text, width - padding, height - padding / 2);
