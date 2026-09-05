@@ -853,39 +853,51 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="flex flex-col gap-4 animate-fadeIn">
           {/* Preset Palettes */}
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-neutral-300">Preset Color Themes</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-300">Preset Color Themes</label>
+              <span className="text-[11px] text-neutral-500">Sets primary & secondary colors</span>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {COLOR_THEMES.map((th) => (
-                <button
-                  key={th.id}
-                  id={`theme-preset-btn-${th.id}`}
-                  onClick={() => {
-                    onThemeSelect(th.id);
-                    onSettingsChange({ useCustomColors: false, themeId: th.id });
-                  }}
-                  className={`p-2.5 rounded-xl border text-left flex flex-col gap-2 transition-all cursor-pointer ${
-                    settings.themeId === th.id && !settings.useCustomColors
-                      ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20'
-                      : 'bg-neutral-950/70 border-neutral-800 hover:border-neutral-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <div
-                      className="w-4 h-4 rounded-full shadow-sm"
-                      style={{ backgroundColor: th.primaryColor }}
-                    />
-                    <div
-                      className="w-4 h-4 rounded-full shadow-sm"
-                      style={{ backgroundColor: th.primaryGradientEnd || th.accentColor }}
-                    />
-                    <div
-                      className="w-4 h-4 rounded-full shadow-sm ml-auto border border-white/20"
-                      style={{ backgroundColor: th.backgroundColor }}
-                    />
-                  </div>
-                  <div className="text-[11px] font-medium text-neutral-200 truncate">{th.name}</div>
-                </button>
-              ))}
+              {COLOR_THEMES.map((th) => {
+                const isSelected =
+                  settings.themeId === th.id ||
+                  (settings.primaryColor === th.primaryColor && settings.gradientColor === th.gradientColor);
+                return (
+                  <button
+                    key={th.id}
+                    id={`theme-preset-btn-${th.id}`}
+                    type="button"
+                    onClick={() => {
+                      onThemeSelect(th.id);
+                      onSettingsChange({
+                        primaryColor: th.primaryColor,
+                        gradientColor: th.gradientColor || th.accentColor || '#38bdf8',
+                        themeId: th.id,
+                        useCustomColors: false,
+                      });
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-2 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20'
+                        : 'bg-neutral-950/70 border-neutral-800 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded-full shadow-sm"
+                        style={{ backgroundColor: th.primaryColor }}
+                        title={`Primary: ${th.primaryColor}`}
+                      />
+                      <div
+                        className="w-4 h-4 rounded-full shadow-sm"
+                        style={{ backgroundColor: th.gradientColor || th.accentColor || th.primaryColor }}
+                        title={`Secondary: ${th.gradientColor || th.accentColor || th.primaryColor}`}
+                      />
+                    </div>
+                    <div className="text-[11px] font-medium text-neutral-200 truncate">{th.name}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -980,52 +992,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
           {/* Custom Color Pickers */}
           <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-neutral-950/70 border border-neutral-800">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-neutral-300">Custom Colors Override</label>
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-neutral-400">
-                <input
-                  type="checkbox"
-                  checked={settings.useCustomColors}
-                  onChange={(e) => onSettingsChange({ useCustomColors: e.target.checked })}
-                  className="rounded accent-cyan-400"
-                />
-                <span>Enable Custom Colors</span>
-              </label>
+            <div>
+              <label className="text-xs font-semibold text-neutral-300">Custom Colors</label>
+              <p className="text-[11px] text-neutral-400">Directly fine-tune the primary and secondary colors</p>
             </div>
 
-            {settings.useCustomColors && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <span className="text-[11px] text-neutral-400 block mb-1">Primary Color</span>
+                <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
+                  <input
+                    type="color"
+                    value={settings.primaryColor || '#06b6d4'}
+                    onChange={(e) => onSettingsChange({ primaryColor: e.target.value, useCustomColors: true })}
+                    className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
+                  />
+                  <span className="font-mono text-xs text-neutral-300 uppercase">{settings.primaryColor || '#06b6d4'}</span>
+                </div>
+              </div>
+
+              {settings.enableGradient !== false && (
                 <div>
-                  <span className="text-[11px] text-neutral-400 block mb-1">Primary Color</span>
+                  <span className="text-[11px] text-neutral-400 block mb-1">Secondary / Gradient Color</span>
                   <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
                     <input
                       type="color"
-                      value={settings.primaryColor}
-                      onChange={(e) => onSettingsChange({ primaryColor: e.target.value })}
+                      value={settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
+                      onChange={(e) => onSettingsChange({ gradientColor: e.target.value, primaryGradientEnd: e.target.value, useCustomColors: true })}
                       className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
                     />
-                    <span className="font-mono text-xs text-neutral-300 uppercase">{settings.primaryColor}</span>
+                    <span className="font-mono text-xs text-neutral-300 uppercase">
+                      {settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
+                    </span>
                   </div>
                 </div>
-
-                {settings.enableGradient !== false && (
-                  <div>
-                    <span className="text-[11px] text-neutral-400 block mb-1">Gradient / Accent Color</span>
-                    <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
-                      <input
-                        type="color"
-                        value={settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
-                        onChange={(e) => onSettingsChange({ gradientColor: e.target.value, primaryGradientEnd: e.target.value })}
-                        className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
-                      />
-                      <span className="font-mono text-xs text-neutral-300 uppercase">
-                        {settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}

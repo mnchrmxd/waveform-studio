@@ -17,8 +17,8 @@ export interface ExportConfig {
   audioBitrate: number; // in bps, e.g. 192_000 (192 kbps)
   format: ExportFormat;
   exportAlpha?: boolean; // When true, forces 100% transparent background
-  trimStart: number; // in seconds
-  trimEnd: number; // in seconds
+  trimStart?: number; // in seconds (deprecated: full audio duration used by default)
+  trimEnd?: number; // in seconds (deprecated: full audio duration used by default)
   settings: VisualizerSettings;
   theme: ColorTheme;
   backgroundImage?: HTMLImageElement | ImageBitmap | null;
@@ -32,10 +32,10 @@ export interface ExportProgress {
   currentFrame: number;
   totalFrames: number;
   percentage: number;
-  fps: number; // Speed multiplier (e.g. 180 FPS)
-  speedMultiplier: number; // e.g. 6.0x faster than real-time
-  elapsedSeconds: number;
-  estimatedRemainingSeconds: number;
+  fps: number; // Real encoding frames per second (e.g. 60 FPS, 95 FPS)
+  elapsedSeconds: number; // Real elapsed time in seconds
+  speedMultiplier?: number; // (Retired)
+  estimatedRemainingSeconds?: number; // (Retired)
   status:
     | 'initializing'
     | 'encoding-audio'
@@ -58,7 +58,7 @@ export interface ExportResult {
   totalFrames: number;
   renderTimeSec: number;
   averageFps: number;
-  speedRatio: number;
+  speedRatio?: number; // (Retired)
 }
 
 /**
@@ -230,7 +230,6 @@ export class FastHeadlessVideoExporter {
       canvas = new OffscreenCanvas(width, height);
       ctx = canvas.getContext('2d', {
         alpha: isAlphaExport ? true : false,
-        desynchronized: true,
       }) as OffscreenCanvasRenderingContext2D;
     } else {
       canvas = document.createElement('canvas');
@@ -319,6 +318,7 @@ export class FastHeadlessVideoExporter {
       height,
       bitrate: config.videoBitrate || 8_000_000,
       framerate: fps,
+      latencyMode: 'quality', // Prevents mobile hardware encoders from dropping frames under load
     };
 
     if (isAlphaExport && webCodecsSupportsAlpha) {
@@ -496,8 +496,13 @@ export class FastHeadlessVideoExporter {
       videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
       videoFrame.close();
 
-      // Encoder queue pacing: backpressure control
-      if (videoEncoder.encodeQueueSize > 5) {
+      // Encoder queue pacing: backpressure control (crucial for mobile hardware encoders)
+      while (videoEncoder.encodeQueueSize > 2) {
+        await new Promise((resolve) => setTimeout(resolve, 8));
+      }
+
+      // Micro-yield periodically to prevent starving mobile GPU and encoder threads
+      if (i % 8 === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 

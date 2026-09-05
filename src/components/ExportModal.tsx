@@ -47,6 +47,8 @@ interface ExportModalProps {
   profileImage?: HTMLImageElement | null;
   profileImageUrl?: string | null;
   onSettingsChange?: (newSettings: Partial<VisualizerSettings>) => void;
+  jobId?: string | null;
+  autoStart?: boolean;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -66,6 +68,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   profileImage,
   profileImageUrl,
   onSettingsChange,
+  jobId,
+  autoStart,
 }) => {
   const [resolution, setResolution] = useState<ExportResolution>('1080p');
   const [format, setFormat] = useState<ExportFormat>('mp4');
@@ -76,6 +80,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [videoBitrate, setVideoBitrate] = useState<number>(8_000_000); // 8 Mbps
   const [audioBitrate] = useState<number>(192_000); // 192 kbps
   const [isPayloadModalOpen, setIsPayloadModalOpen] = useState<boolean>(false);
+
+  // Debug Terminal Mode
+  const [showDebugTerminal, setShowDebugTerminal] = useState<boolean>(false);
+  const [debugLogs, setDebugLogs] = useState<
+    Array<{ time: string; text: string; type?: 'info' | 'warn' | 'success' | 'frame' }>
+  >([]);
+
+  const addDebugLog = (
+    text: string,
+    type: 'info' | 'warn' | 'success' | 'frame' = 'info'
+  ) => {
+    const time = (performance.now() / 1000).toFixed(2) + 's';
+    setDebugLogs((prev) => [...prev.slice(-150), { time, text, type }]);
+  };
+
+  // Unified Job ID (from prop, URL query param, or session)
+  const [activeJobId, setActiveJobId] = useState<string | null>(() => {
+    if (jobId) return jobId;
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get('jobId');
+    }
+    return null;
+  });
 
   // Direct element visibility toggles for export
   const [effectiveTrackInfo, setEffectiveTrackInfo] = useState<boolean>(Boolean(settings.showTrackInfo));
@@ -109,8 +137,76 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } else {
         setFormat('mp4');
       }
+
+      // Check URL for jobId if not already set
+      if (!activeJobId && typeof window !== 'undefined') {
+        const sp = new URLSearchParams(window.location.search);
+        const jId = sp.get('jobId');
+        if (jId) setActiveJobId(jId);
+      }
     }
-  }, [isOpen, settings.backgroundType]);
+  }, [isOpen, settings.backgroundType, activeJobId]);
+
+  // Load external job payload if jobId is present
+  useEffect(() => {
+    if (!isOpen || !activeJobId) return;
+
+    let isMounted = true;
+    const loadJobDetails = async () => {
+      try {
+        addDebugLog(`Fetching job configuration for "${activeJobId}" from server...`, 'info');
+        const res = await fetch(`/api/render-job/${activeJobId}`);
+        if (!res.ok) {
+          addDebugLog(`Job "${activeJobId}" not found on server (${res.status})`, 'warn');
+          return;
+        }
+        const data = await res.json();
+        const payload = data.payload || data;
+        if (!isMounted) return;
+
+        addDebugLog(`Loaded configuration for job "${activeJobId}".`, 'success');
+
+        if (payload.video?.format) {
+          setFormat(payload.video.format === 'webm' ? 'webm' : 'mp4');
+        }
+        if (payload.video?.fps) {
+          setFps(payload.video.fps === 30 ? 30 : 60);
+        }
+        if (payload.video?.width) {
+          if (payload.video.width >= 3840) setResolution('4k');
+          else if (payload.video.width <= 1280) setResolution('720p');
+          else setResolution('1080p');
+        }
+        if (payload.video?.videoBitrate) {
+          setVideoBitrate(payload.video.videoBitrate);
+        }
+        if (payload.settings) {
+          if (payload.settings.backgroundType === 'transparent') {
+            setExportAlpha(true);
+            setFormat('webm-alpha');
+          }
+          onSettingsChange?.(payload.settings);
+        }
+
+        // Auto-start export if requested via query or prop
+        const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        if (autoStart || sp?.get('auto') === 'true') {
+          setTimeout(() => {
+            if (isMounted) {
+              handleStartExport();
+            }
+          }, 300);
+        }
+      } catch (err: any) {
+        addDebugLog(`Failed to load job "${activeJobId}": ${err.message}`, 'warn');
+      }
+    };
+
+    loadJobDetails();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, activeJobId, autoStart]);
 
   if (!isOpen) return null;
 
@@ -177,6 +273,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setErrorMessage(null);
     setExportResult(null);
 
+    const dims = getExportDimensions();
+    addDebugLog(`Initializing render pipeline: ${dims.width}x${dims.height} @ ${fps} FPS (${format})`, 'info');
+    addDebugLog(`Audio stream loaded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels} channels`, 'info');
+
     const exportSettings: VisualizerSettings = {
       ...settings,
       showTrackInfo: effectiveTrackInfo,
@@ -210,15 +310,58 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         config,
         (p) => {
           setProgress(p);
+
+          // Report progress to local server if jobId exists
+          if (activeJobId && (p.currentFrame % 30 === 0 || p.currentFrame === p.totalFrames)) {
+            fetch(`/api/render-progress/${activeJobId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                currentFrame: p.currentFrame,
+                totalFrames: p.totalFrames,
+                progress: p.percentage,
+                fps: p.fps,
+                elapsedSec: Number(p.elapsedSeconds.toFixed(1)),
+                status: p.status,
+                message: `Rendering frames in browser: ${p.percentage}% (${p.fps} FPS)`,
+              }),
+            }).catch(() => {});
+          }
+
+          if (p.currentFrame % 60 === 0 && p.currentFrame > 0) {
+            addDebugLog(`Frame ${p.currentFrame}/${p.totalFrames} (${p.percentage}%) • ${p.fps} FPS`, 'frame');
+          }
         }
       );
 
       setExportResult(result);
       setIsExporting(false);
+      addDebugLog(
+        `Render completed! ${result.fileName} (${(result.blob.size / (1024 * 1024)).toFixed(2)} MB) in ${result.renderTimeSec}s @ ${result.averageFps} FPS`,
+        'success'
+      );
+
+      // Upload completed video to local server if jobId is present
+      if (activeJobId) {
+        addDebugLog(`Uploading rendered file to server for job ${activeJobId}...`, 'info');
+        try {
+          const fd = new FormData();
+          fd.append('video', result.blob, result.fileName);
+          fd.append('mimeType', result.fileName.endsWith('.mp4') ? 'video/mp4' : 'video/webm');
+          await fetch(`/api/render-complete/${activeJobId}`, {
+            method: 'POST',
+            body: fd,
+          });
+          addDebugLog(`File uploaded to server. Available for download at /api/render-download/${activeJobId}`, 'success');
+        } catch (uploadErr: any) {
+          addDebugLog(`Notice: Server upload returned ${uploadErr.message}`, 'warn');
+        }
+      }
     } catch (err: unknown) {
       setIsExporting(false);
       const msg = err instanceof Error ? err.message : 'Unknown error during export.';
       setErrorMessage(msg);
+      addDebugLog(`Export error: ${msg}`, 'warn');
     }
   };
 
@@ -226,6 +369,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     fastVideoExporter.cancel();
     setIsExporting(false);
     setProgress(null);
+    addDebugLog('Export cancelled by user', 'warn');
+    if (activeJobId) {
+      fetch(`/api/render-progress/${activeJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'canceled',
+          message: 'Export cancelled in browser',
+        }),
+      }).catch(() => {});
+    }
   };
 
   const handleDownload = () => {
@@ -257,19 +411,84 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           </div>
 
-          {!isExporting && (
+          <div className="flex items-center gap-2">
+            {/* Debug Mode Toggle Button */}
             <button
-              id="export-modal-close-btn"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              id="toggle-debug-terminal-btn"
+              type="button"
+              onClick={() => setShowDebugTerminal(!showDebugTerminal)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer ${
+                showDebugTerminal
+                  ? 'bg-neutral-800 border-cyan-500/60 text-cyan-300 shadow-sm'
+                  : 'bg-neutral-900/80 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+              }`}
+              title="Toggle live execution debug terminal"
             >
-              <X className="w-5 h-5" />
+              <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Debug Mode</span>
             </button>
-          )}
+
+            {!isExporting && (
+              <button
+                id="export-modal-close-btn"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto flex flex-col gap-4">
+          {/* Debug Console Terminal (Toggled by Debug Mode) */}
+          {showDebugTerminal && (
+            <div className="p-3 bg-black/95 rounded-xl border border-neutral-800/90 font-mono text-[11px] flex flex-col gap-1.5 shadow-inner">
+              <div className="flex items-center justify-between text-neutral-400 pb-1.5 border-b border-neutral-800">
+                <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Execution & WebCodecs Debugger</span>
+                  {activeJobId && (
+                    <span className="text-[10px] text-neutral-500 font-normal">
+                      (Job ID: {activeJobId})
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDebugLogs([])}
+                  className="text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
+                >
+                  Clear Logs
+                </button>
+              </div>
+              <div className="max-h-36 overflow-y-auto flex flex-col gap-1 pr-1 select-text scrollbar-thin">
+                {debugLogs.length === 0 ? (
+                  <span className="text-neutral-600 italic">No telemetry logged yet. Ready to export.</span>
+                ) : (
+                  debugLogs.map((log, idx) => (
+                    <div key={idx} className="flex items-start gap-2 leading-tight">
+                      <span className="text-neutral-500 shrink-0 select-none">[{log.time}]</span>
+                      <span
+                        className={
+                          log.type === 'success'
+                            ? 'text-emerald-400'
+                            : log.type === 'warn'
+                            ? 'text-amber-400'
+                            : log.type === 'frame'
+                            ? 'text-cyan-400'
+                            : 'text-neutral-300'
+                        }
+                      >
+                        {log.text}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
           {/* Configuration Form */}
           {!isExporting && !exportResult && (
             <>
@@ -661,8 +880,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'Headless Video Rendering'}
                 </h3>
                 <p className="text-xs text-cyan-400 font-mono">
-                  {progress.speedMultiplier > 0
-                    ? `⚡ ${progress.fps} FPS (${progress.speedMultiplier}x faster than real-time)`
+                  {progress.fps > 0
+                    ? `⚡ ${progress.fps} FPS`
                     : 'Encoding audio & initializing frames...'}
                 </p>
               </div>
@@ -681,7 +900,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     Frame {progress.currentFrame} / {progress.totalFrames} ({progress.percentage}%)
                   </span>
                   <span>
-                    {progress.elapsedSeconds}s elapsed • ~{progress.estimatedRemainingSeconds}s left
+                    {progress.elapsedSeconds.toFixed(1)}s elapsed
                   </span>
                 </div>
               </div>
@@ -712,7 +931,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         : 'Video Rendered Successfully!'}
                     </div>
                     <div className="text-[11px] text-neutral-400">
-                      Rendered in {exportResult.renderTimeSec}s at {exportResult.averageFps} FPS ({exportResult.speedRatio}x speed)
+                      Rendered in {exportResult.renderTimeSec}s at {exportResult.averageFps} FPS
+                      {activeJobId && (
+                        <span className="ml-2 text-cyan-400 font-mono text-[10px]">
+                          • Synced with job {activeJobId}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -809,11 +1033,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         {/* Modal Footer */}
         {!isExporting && !exportResult && (
           <div className="px-5 py-4 border-t border-neutral-800 bg-neutral-900/60 flex items-center justify-between gap-3">
-            <div className="text-xs text-neutral-400 font-mono">
-              Est. Render Time:{' '}
-              <span className="text-cyan-400 font-semibold">
-                ~{Math.max(1, Math.round(exportDuration / 4))}–{Math.max(2, Math.round(exportDuration / 2))}s
+            <div className="text-xs text-neutral-400 font-mono flex items-center gap-1.5 flex-wrap">
+              <span className="text-neutral-500">Output:</span>
+              <span className="text-cyan-300 font-medium">
+                {getExportDimensions().width}×{getExportDimensions().height}
               </span>
+              <span className="text-neutral-600">•</span>
+              <span className="text-neutral-300">{fps} FPS</span>
+              <span className="text-neutral-600">•</span>
+              <span className="text-cyan-400 uppercase font-semibold">{format}</span>
+              {activeJobId && (
+                <>
+                  <span className="text-neutral-600">•</span>
+                  <span className="text-indigo-400">Job: {activeJobId}</span>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

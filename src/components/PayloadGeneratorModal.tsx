@@ -214,7 +214,7 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
 
     // Solid/Custom background color (omit if transparent)
     if (!isTransparent) {
-      prunedSettings.backgroundColor = settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor;
+      prunedSettings.backgroundColor = settings.backgroundColor || '#09090b';
     }
 
     // Profile picture settings (always output boolean flag so backend doesn't fall back to defaults)
@@ -267,33 +267,14 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
     prunedSettings.aspectRatio = settings.aspectRatio;
     prunedSettings.padding = settings.padding;
 
-    // Gradient & Color Representation Mode
+    // Colors: presets and UI provide primary and secondary colors directly (Theme ID deprecated)
+    prunedSettings.primaryColor = settings.primaryColor || '#06b6d4';
     if (settings.enableGradient !== false) {
       prunedSettings.enableGradient = true;
       prunedSettings.colorMode = settings.colorMode || 'bottom-to-top';
-      prunedSettings.gradientColor = settings.useCustomColors
-        ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || '#38bdf8')
-        : (theme.gradientColor || theme.primaryGradientEnd || '#38bdf8');
+      prunedSettings.gradientColor = settings.gradientColor || settings.primaryGradientEnd || '#38bdf8';
     } else {
       prunedSettings.enableGradient = false;
-    }
-
-    // Theme object: clean of deprecated fields, only primary + optional gradient
-    const themeObj: Record<string, any> = {
-      id: theme.id,
-      name: theme.name,
-      primaryColor: settings.useCustomColors ? settings.primaryColor : theme.primaryColor,
-    };
-
-    if (settings.enableGradient !== false) {
-      themeObj.gradientColor = settings.useCustomColors
-        ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || '#38bdf8')
-        : (theme.gradientColor || theme.primaryGradientEnd || '#38bdf8');
-      themeObj.colorMode = settings.colorMode || 'bottom-to-top';
-    }
-
-    if (!isTransparent) {
-      themeObj.backgroundColor = settings.useCustomColors ? settings.backgroundColor : theme.backgroundColor;
     }
 
     return {
@@ -305,7 +286,10 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
         format: exportConfig.format,
       },
       settings: prunedSettings,
-      theme: themeObj,
+      colors: {
+        primary: settings.primaryColor || '#06b6d4',
+        secondary: settings.gradientColor || settings.primaryGradientEnd || '#38bdf8',
+      },
       ...(profileField ? { profileImage: profileField } : {}),
       ...(bgField ? { backgroundImage: bgField } : {}),
     };

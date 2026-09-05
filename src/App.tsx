@@ -13,6 +13,12 @@ import { COLOR_THEMES, DEFAULT_SETTINGS } from './data/presets';
 import { loadDefaultAvatarImage } from './utils/defaultAvatar';
 
 export default function App() {
+  const [initialJobId, setInitialJobId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const s = new URLSearchParams(window.location.search);
+    return s.get('jobId');
+  });
+
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [waveformData, setWaveformData] = useState<WaveformData | null>(null);
@@ -255,10 +261,9 @@ export default function App() {
       setTheme(th);
       setSettings((prev) => ({
         ...prev,
-        themeId,
+        themeId: th.id,
         primaryColor: th.primaryColor,
-        gradientColor: th.gradientColor,
-        backgroundColor: th.backgroundColor,
+        gradientColor: th.gradientColor || th.accentColor || '#38bdf8',
       }));
     }
   };
@@ -266,6 +271,27 @@ export default function App() {
   const handleAspectRatioChange = (aspect: AspectRatioType) => {
     setSettings((prev) => ({ ...prev, aspectRatio: aspect }));
   };
+
+  // Auto-open ExportModal if navigating to /render or with ?jobId=
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkRoute = () => {
+      const p = window.location.pathname;
+      const s = window.location.search;
+      const sp = new URLSearchParams(s);
+      const jId = sp.get('jobId');
+      if (jId) {
+        setInitialJobId(jId);
+      }
+      if (p === '/render' || p.startsWith('/render/') || s.includes('jobId=') || s.includes('mode=render')) {
+        setIsExportModalOpen(true);
+      }
+    };
+
+    checkRoute();
+    window.addEventListener('popstate', checkRoute);
+    return () => window.removeEventListener('popstate', checkRoute);
+  }, []);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-cyan-500 selection:text-black">
@@ -375,7 +401,13 @@ export default function App() {
       {/* Fast Headless Export Modal */}
       <ExportModal
         isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
+        onClose={() => {
+          setIsExportModalOpen(false);
+          if (typeof window !== 'undefined' && window.location.pathname === '/render') {
+            window.history.pushState({}, '', '/');
+          }
+        }}
+        jobId={initialJobId}
         audioBuffer={audioBuffer}
         audioUrl={audioUrl}
         waveformData={waveformData}

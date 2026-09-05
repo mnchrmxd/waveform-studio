@@ -205,7 +205,7 @@ function getCachedBackground(
     }
 
     case 'radial-spotlight': {
-      ctx.fillStyle = settings.backgroundColor || theme.backgroundColor || '#09090b';
+      ctx.fillStyle = settings.backgroundColor || '#09090b';
       ctx.fillRect(0, 0, width, height);
       const spotGrad = ctx.createRadialGradient(
         width / 2,
@@ -215,7 +215,7 @@ function getCachedBackground(
         height / 2,
         Math.max(width, height) * 0.7
       );
-      const accent = theme.accentColor || theme.primaryColor;
+      const accent = settings.primaryColor || theme.accentColor || theme.primaryColor || '#38bdf8';
       spotGrad.addColorStop(0, hexToRgba(accent, 0.28));
       spotGrad.addColorStop(0.6, hexToRgba(accent, 0.06));
       spotGrad.addColorStop(1, 'transparent');
@@ -226,9 +226,9 @@ function getCachedBackground(
 
     case 'gradient-mesh': {
       const meshGrad = ctx.createLinearGradient(0, 0, width, height);
-      meshGrad.addColorStop(0, settings.backgroundColor || theme.backgroundColor || '#09090b');
-      meshGrad.addColorStop(0.5, theme.backgroundSecondary || '#18181b');
-      meshGrad.addColorStop(1, settings.backgroundColor || theme.backgroundColor || '#09090b');
+      meshGrad.addColorStop(0, settings.backgroundColor || '#09090b');
+      meshGrad.addColorStop(0.5, '#18181b');
+      meshGrad.addColorStop(1, settings.backgroundColor || '#09090b');
       ctx.fillStyle = meshGrad;
       ctx.fillRect(0, 0, width, height);
 
@@ -240,7 +240,7 @@ function getCachedBackground(
         height * 0.35,
         width * 0.4
       );
-      orb1.addColorStop(0, hexToRgba(theme.primaryColor, 0.22));
+      orb1.addColorStop(0, hexToRgba(settings.primaryColor || theme.primaryColor || '#06b6d4', 0.22));
       orb1.addColorStop(1, 'transparent');
       ctx.fillStyle = orb1;
       ctx.fillRect(0, 0, width, height);
@@ -253,7 +253,7 @@ function getCachedBackground(
         height * 0.65,
         width * 0.45
       );
-      orb2.addColorStop(0, hexToRgba(theme.primaryGradientEnd || theme.accentColor, 0.18));
+      orb2.addColorStop(0, hexToRgba(settings.gradientColor || settings.primaryGradientEnd || theme.accentColor || '#ec4899', 0.18));
       orb2.addColorStop(1, 'transparent');
       ctx.fillStyle = orb2;
       ctx.fillRect(0, 0, width, height);
@@ -270,8 +270,8 @@ function getCachedBackground(
         height / 2,
         Math.max(width, height) * 0.75
       );
-      bgGrad.addColorStop(0, theme.backgroundSecondary || '#18181b');
-      bgGrad.addColorStop(1, settings.backgroundColor || theme.backgroundColor || '#09090b');
+      bgGrad.addColorStop(0, '#18181b');
+      bgGrad.addColorStop(1, settings.backgroundColor || '#09090b');
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
       break;
@@ -568,7 +568,7 @@ function renderCenterLine(
 ): void {
   ctx.save();
   const centerY = height / 2;
-  ctx.strokeStyle = hexToRgba(theme.primaryColor, 0.25);
+  ctx.strokeStyle = hexToRgba(settings.primaryColor || theme.primaryColor || '#06b6d4', 0.25);
   ctx.lineWidth = Math.max(1, 1 * resScale);
   ctx.beginPath();
   ctx.moveTo(settings.padding || 32, centerY);
@@ -701,10 +701,8 @@ function renderMirroredBars(
   const maxHalfHeight = (height / 2) * scale;
   const glow = settings.glowIntensity || 0.4;
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
   const isAlternate = enableGradient && colorMode === 'alternate-bars';
@@ -1018,10 +1016,8 @@ function renderBarsUp(
   const maxHeight = (height - 30) * (settings.heightScale || 1.0);
   const glow = settings.glowIntensity || 0.4;
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
   const isAlternate = enableGradient && colorMode === 'alternate-bars';
@@ -1322,10 +1318,8 @@ function renderSmoothWave(
     : 0;
   const gap = Math.max(0, settings.profileWingGap ?? 16);
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
 
@@ -1479,8 +1473,8 @@ function renderProfileImage(
   } else {
     // Elegant Avatar Placeholder with Theme Gradient & Waveform Graphic
     const avatarGrad = ctx.createLinearGradient(imgX - r, imgY - r, imgX + r, imgY + r);
-    avatarGrad.addColorStop(0, theme.primaryColor);
-    avatarGrad.addColorStop(1, theme.primaryGradientEnd || theme.accentColor || '#38bdf8');
+    avatarGrad.addColorStop(0, theme.primaryColor || '#06b6d4');
+    avatarGrad.addColorStop(1, theme.gradientColor || theme.primaryGradientEnd || theme.accentColor || '#38bdf8');
     ctx.fillStyle = avatarGrad;
     ctx.fillRect(imgX - r, imgY - r, currentSize, currentSize);
 
@@ -1547,10 +1541,8 @@ function renderRadial(
   const rotation = ((settings.radialRotation || 0) * Math.PI) / 180 + time * 0.2;
   const glow = settings.glowIntensity || 0.4;
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
   const isAlternate = enableGradient && colorMode === 'alternate-bars';
@@ -1716,10 +1708,8 @@ function renderDigitalMatrix(
   const cutoutLeft = avatarX - avatarRadius - gap;
   const cutoutRight = avatarX + avatarRadius + gap;
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
   const isAlternate = enableGradient && colorMode === 'alternate-bars';
@@ -1864,10 +1854,8 @@ function renderSpine(
     : 0;
   const gap = Math.max(0, settings.profileWingGap ?? 16);
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
 
@@ -1984,10 +1972,8 @@ function renderSpectrumBands(
     { label: '16kHz', val: spectrum.frequencies[64] || 0 },
   ];
 
-  const primaryCol = settings.useCustomColors ? settings.primaryColor : theme.primaryColor;
-  const gradientCol = settings.useCustomColors
-    ? (settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor)
-    : (theme.gradientColor || theme.primaryGradientEnd || settings.gradientColor || primaryCol);
+  const primaryCol = settings.primaryColor || theme.primaryColor || '#06b6d4';
+  const gradientCol = settings.gradientColor || settings.primaryGradientEnd || theme.gradientColor || primaryCol;
   const enableGradient = settings.enableGradient !== undefined ? settings.enableGradient : true;
   const colorMode: ColorRepresentationMode = settings.colorMode || 'bottom-to-top';
 
@@ -2094,7 +2080,7 @@ function renderTrackOverlay(
   ctx.fillText(title, tx, ty);
 
   ctx.font = `500 ${artistSize}px "Plus Jakarta Sans", sans-serif`;
-  ctx.fillStyle = theme.accentColor || theme.primaryColor || '#38bdf8';
+  ctx.fillStyle = settings.primaryColor || theme.accentColor || theme.primaryColor || '#38bdf8';
   const curMin = Math.floor(time / 60);
   const curSec = Math.floor(time % 60)
     .toString()

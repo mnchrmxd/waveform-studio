@@ -32,7 +32,16 @@ export interface HeadlessVideoOptions {
   };
   profileImage?: string | Buffer; // Base64 data URI, URL, or Buffer
   backgroundImage?: string | Buffer; // Base64 data URI, URL, or Buffer
-  onProgress?: (progress: number) => void;
+  onProgress?: (
+    progress: number,
+    meta?: {
+      currentFrame: number;
+      totalFrames: number;
+      fps: number;
+      elapsedSec: number;
+      etaSec: number;
+    }
+  ) => void;
 }
 
 export interface HeadlessRenderResult {
@@ -208,10 +217,20 @@ export async function renderHeadlessVideo(
       mergedSettings.showProfileImage = options.settings.showProfileImage;
     }
 
-    let selectedTheme: ColorTheme = COLOR_THEMES[0];
+    const colorsOpt = (options as any).colors;
+    const primaryColor =
+      colorsOpt?.primary ||
+      mergedSettings.primaryColor ||
+      (typeof options.theme === 'object' ? options.theme?.primaryColor : undefined);
+    const gradientColor =
+      colorsOpt?.secondary ||
+      mergedSettings.gradientColor ||
+      (typeof options.theme === 'object' ? options.theme?.gradientColor : undefined);
+
+    let selectedTheme: ColorTheme = { ...COLOR_THEMES[0] };
     if (typeof options.theme === 'string') {
       const found = COLOR_THEMES.find((t) => t.id === options.theme);
-      if (found) selectedTheme = found;
+      if (found) selectedTheme = { ...found };
     } else if (options.theme && typeof options.theme === 'object') {
       selectedTheme = {
         ...COLOR_THEMES[0],
@@ -219,7 +238,17 @@ export async function renderHeadlessVideo(
       };
     } else if (mergedSettings.themeId) {
       const found = COLOR_THEMES.find((t) => t.id === mergedSettings.themeId);
-      if (found) selectedTheme = found;
+      if (found) selectedTheme = { ...found };
+    }
+
+    if (primaryColor) {
+      selectedTheme.primaryColor = primaryColor;
+      mergedSettings.primaryColor = primaryColor;
+    }
+    if (gradientColor) {
+      selectedTheme.gradientColor = gradientColor;
+      selectedTheme.primaryGradientEnd = gradientColor;
+      mergedSettings.gradientColor = gradientColor;
     }
 
     // 4. Video Dimension & Timing Constraints
@@ -285,11 +314,11 @@ export async function renderHeadlessVideo(
         outputPath
       );
     } else {
-      // Standard H.264 MP4
+      // Standard H.264 MP4 (ultrafast preset for fast CPU rendering on servers/Colab)
       ffmpegArgs.push(
         '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '20',
+        '-preset', 'ultrafast',
+        '-crf', '22',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
@@ -315,6 +344,10 @@ export async function renderHeadlessVideo(
     // 8. Render Frames Loop
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
+    const renderStartTime = Date.now();
+    let lastReportTime = renderStartTime;
+    let framesSinceReport = 0;
+    let currentFps = fps;
 
     for (let f = 0; f < totalFrames; f++) {
       const time = f / fps;
@@ -347,8 +380,28 @@ export async function renderHeadlessVideo(
         await new Promise<void>((res) => ffmpeg.stdin.once('drain', res));
       }
 
-      if (options.onProgress && f % 15 === 0) {
-        options.onProgress(f / totalFrames);
+      framesSinceReport++;
+      const now = Date.now();
+      const deltaMs = now - lastReportTime;
+
+      if (options.onProgress && (deltaMs >= 150 || f === totalFrames - 1)) {
+        if (deltaMs > 0) {
+          currentFps = Math.round((framesSinceReport / (deltaMs / 1000)) * 10) / 10;
+        }
+        const elapsedSec = Math.round(((now - renderStartTime) / 1000) * 10) / 10;
+        const framesLeft = totalFrames - (f + 1);
+        const etaSec = currentFps > 0 ? Math.round((framesLeft / currentFps) * 10) / 10 : 0;
+
+        options.onProgress((f + 1) / totalFrames, {
+          currentFrame: f + 1,
+          totalFrames,
+          fps: currentFps,
+          elapsedSec,
+          etaSec,
+        });
+
+        lastReportTime = now;
+        framesSinceReport = 0;
       }
     }
 

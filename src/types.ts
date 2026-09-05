@@ -34,14 +34,14 @@ export interface ColorTheme {
   category: 'neon' | 'modern' | 'minimal' | 'gradient';
   primaryColor: string;
   gradientColor: string;
-  backgroundColor: string;
-  backgroundSecondary: string;
+  backgroundColor?: string;
+  backgroundSecondary?: string;
   accentColor?: string;
   primaryGradientEnd?: string;
   progressColor?: string;
   progressGradientEnd?: string;
-  playheadColor: string;
-  gridColor: string;
+  playheadColor?: string;
+  gridColor?: string;
 }
 
 export type SideSymmetryType = 'none' | 'mirrored-flank' | 'split-cutout';
