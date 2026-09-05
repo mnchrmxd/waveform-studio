@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Palette,
   Sliders,
@@ -18,17 +18,14 @@ import {
   Eye,
   EyeOff,
   MoveHorizontal,
-  Link2,
-  Loader2,
   Check,
-  AlertCircle,
   Video,
   Film,
   Trash2,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { ColorTheme, VisualizerSettings, WaveformStyle, BackgroundType, SideSymmetryType, ProfileImageShape, ColorRepresentationMode } from '../types';
 import { COLOR_THEMES } from '../data/presets';
-import { loadImageFromUrl } from '../utils/imageLoader';
 
 interface ControlPanelProps {
   settings: VisualizerSettings;
@@ -50,6 +47,8 @@ interface ControlPanelProps {
   profileImageUrl?: string | null;
   onProfileImageUpload?: (image: HTMLImageElement | null) => void;
   onProfileImageUrlChange?: (url: string | null) => void;
+  onOpenProfileModal?: () => void;
+  onOpenBackgroundModal?: () => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -72,27 +71,87 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   profileImageUrl,
   onProfileImageUpload,
   onProfileImageUrlChange,
+  onOpenProfileModal,
+  onOpenBackgroundModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'style' | 'avatar' | 'colors' | 'geometry' | 'background' | 'overlays'>('style');
 
-  // Avatar URL State
-  const [avatarMode, setAvatarMode] = useState<'upload' | 'url'>('upload');
-  const [avatarUrlInput, setAvatarUrlInput] = useState(profileImageUrl || '');
-  const [isAvatarLoading, setIsAvatarLoading] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const primaryColorValue = settings.primaryColor || '#06b6d4';
+  const secondaryColorValue = settings.gradientColor || settings.primaryGradientEnd || '#38bdf8';
 
-  // Background Media State (Artwork vs Video)
-  const [bgMediaType, setBgMediaType] = useState<'image' | 'video'>(backgroundVideo ? 'video' : 'image');
-  const [bgMode, setBgMode] = useState<'upload' | 'url'>('upload');
-  const [bgUrlInput, setBgUrlInput] = useState(backgroundImageUrl || '');
-  const [isBgLoading, setIsBgLoading] = useState(false);
-  const [bgError, setBgError] = useState<string | null>(null);
+  const [primaryHex, setPrimaryHex] = useState(primaryColorValue);
+  const [secondaryHex, setSecondaryHex] = useState(secondaryColorValue);
 
-  // Video Background State
-  const [bgVideoMode, setBgVideoMode] = useState<'upload' | 'url'>('upload');
-  const [bgVideoUrlInput, setBgVideoUrlInput] = useState(backgroundVideoUrl || '');
-  const [isBgVideoLoading, setIsBgVideoLoading] = useState(false);
-  const [bgVideoError, setBgVideoError] = useState<string | null>(null);
+  useEffect(() => {
+    setPrimaryHex(primaryColorValue);
+  }, [primaryColorValue]);
+
+  useEffect(() => {
+    setSecondaryHex(secondaryColorValue);
+  }, [secondaryColorValue]);
+
+  const handleSwitchColors = () => {
+    setPrimaryHex(secondaryColorValue);
+    setSecondaryHex(primaryColorValue);
+    onSettingsChange({
+      primaryColor: secondaryColorValue,
+      gradientColor: primaryColorValue,
+      primaryGradientEnd: primaryColorValue,
+      useCustomColors: true,
+    });
+  };
+
+  const handlePrimaryHexChange = (val: string) => {
+    setPrimaryHex(val);
+    const cleaned = val.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted;
+      onSettingsChange({ primaryColor: fullHex, useCustomColors: true });
+    }
+  };
+
+  const handlePrimaryHexBlur = () => {
+    const cleaned = primaryHex.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = (formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted).toUpperCase();
+      setPrimaryHex(fullHex);
+      onSettingsChange({ primaryColor: fullHex, useCustomColors: true });
+    } else {
+      setPrimaryHex(primaryColorValue.toUpperCase());
+    }
+  };
+
+  const handleSecondaryHexChange = (val: string) => {
+    setSecondaryHex(val);
+    const cleaned = val.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted;
+      onSettingsChange({ gradientColor: fullHex, primaryGradientEnd: fullHex, useCustomColors: true });
+    }
+  };
+
+  const handleSecondaryHexBlur = () => {
+    const cleaned = secondaryHex.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = (formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted).toUpperCase();
+      setSecondaryHex(fullHex);
+      onSettingsChange({ gradientColor: fullHex, primaryGradientEnd: fullHex, useCustomColors: true });
+    } else {
+      setSecondaryHex(secondaryColorValue.toUpperCase());
+    }
+  };
 
   const visualizerStyles: { id: WaveformStyle; name: string; icon: React.ReactNode; desc: string }[] = [
     {
@@ -138,115 +197,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       desc: 'Equalizer frequency bands from 32Hz to 16kHz',
     },
   ];
-
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        onBackgroundImageUpload(img);
-        onBackgroundImageUrlChange?.(null);
-      };
-    }
-  };
-
-  const handleProfileFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        onProfileImageUpload?.(img);
-        onProfileImageUrlChange?.(null);
-        onSettingsChange({ showProfileImage: true });
-      };
-    }
-  };
-
-  const handleLoadAvatarUrl = async (urlToLoad?: string) => {
-    const targetUrl = (urlToLoad || avatarUrlInput).trim();
-    if (!targetUrl) return;
-    setIsAvatarLoading(true);
-    setAvatarError(null);
-    try {
-      const img = await loadImageFromUrl(targetUrl);
-      onProfileImageUpload?.(img);
-      onProfileImageUrlChange?.(targetUrl);
-      onSettingsChange({ showProfileImage: true });
-    } catch (err: any) {
-      setAvatarError(err?.message || 'Failed to load avatar image from URL');
-    } finally {
-      setIsAvatarLoading(false);
-    }
-  };
-
-  const handleLoadBgUrl = async (urlToLoad?: string) => {
-    const targetUrl = (urlToLoad || bgUrlInput).trim();
-    if (!targetUrl) return;
-    setIsBgLoading(true);
-    setBgError(null);
-    try {
-      const img = await loadImageFromUrl(targetUrl);
-      onBackgroundImageUpload(img);
-      onBackgroundImageUrlChange?.(targetUrl);
-    } catch (err: any) {
-      setBgError(err?.message || 'Failed to load background image from URL');
-    } finally {
-      setIsBgLoading(false);
-    }
-  };
-
-  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setBgVideoError(null);
-      setIsBgVideoLoading(true);
-
-      const videoUrl = URL.createObjectURL(file);
-      const video = document.createElement('video');
-      video.src = videoUrl;
-      video.crossOrigin = 'anonymous';
-      video.loop = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.preload = 'auto';
-
-      video.onloadeddata = () => {
-        setIsBgVideoLoading(false);
-        onBackgroundVideoUpload?.(video, videoUrl);
-      };
-      video.onerror = () => {
-        setIsBgVideoLoading(false);
-        setBgVideoError('Failed to load video file. Please check video format (MP4, WebM, MOV recommended).');
-      };
-    }
-  };
-
-  const handleLoadBgVideoUrl = (customUrl?: string) => {
-    const targetUrl = (customUrl || bgVideoUrlInput).trim();
-    if (!targetUrl) return;
-
-    setBgVideoError(null);
-    setIsBgVideoLoading(true);
-
-    const video = document.createElement('video');
-    video.src = targetUrl;
-    video.crossOrigin = 'anonymous';
-    video.loop = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = 'auto';
-
-    video.onloadeddata = () => {
-      setIsBgVideoLoading(false);
-      onBackgroundVideoUpload?.(video, targetUrl);
-    };
-    video.onerror = () => {
-      setIsBgVideoLoading(false);
-      setBgVideoError('Failed to load video from URL. Check CORS headers and direct link to MP4/WebM.');
-    };
-  };
 
   return (
     <div
@@ -411,147 +361,59 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
             {settings.showProfileImage && (
               <div className="flex flex-col gap-3 pt-2 border-t border-neutral-800/80">
-                {/* Method selector: Upload File vs Image URL */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800">
-                    <button
-                      type="button"
-                      onClick={() => setAvatarMode('upload')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        avatarMode === 'upload'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      Upload File
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAvatarMode('url')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        avatarMode === 'url'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      <Link2 className="w-3 h-3 text-amber-400" />
-                      <span>Image URL</span>
-                    </button>
-                  </div>
-
-                  {profileImage && (
-                    <button
-                      id="remove-profile-image-btn"
-                      onClick={() => {
-                        onProfileImageUpload?.(null);
-                        onProfileImageUrlChange?.(null);
-                      }}
-                      className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
-                    >
-                      Reset to Default Badge
-                    </button>
-                  )}
-                </div>
-
-                {avatarMode === 'upload' ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700">
-                      <ImageIcon className="w-4 h-4 text-amber-400" />
-                      <span>{profileImage ? 'Change Image...' : 'Upload Profile Picture...'}</span>
-                      <input
-                        id="profile-image-input"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProfileFileChange}
-                        className="hidden"
-                      />
-                    </label>
-
-                    <span className="text-[11px] text-neutral-400">
-                      {profileImage ? '✓ Custom picture loaded' : 'Using default studio badge'}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          type="url"
-                          placeholder="https://example.com/avatar.png"
-                          value={avatarUrlInput}
-                          onChange={(e) => setAvatarUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleLoadAvatarUrl();
-                            }
-                          }}
-                          className="w-full bg-neutral-900 border border-neutral-800 focus:border-amber-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 font-mono"
+                <div className="flex items-center justify-between gap-3 p-3 bg-neutral-950/60 border border-neutral-800 rounded-xl">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Thumbnail preview or default badge icon */}
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-neutral-850 border border-neutral-700 flex items-center justify-center shrink-0">
+                      {profileImage ? (
+                        <img
+                          src={profileImage.src}
+                          alt="Avatar"
+                          className="w-full h-full object-cover"
                         />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleLoadAvatarUrl()}
-                        disabled={isAvatarLoading || !avatarUrlInput.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold rounded-lg text-xs transition-all cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        {isAvatarLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Link2 className="w-3.5 h-3.5" />
-                        )}
-                        <span>Load URL</span>
-                      </button>
+                      ) : (
+                        <User className="w-5 h-5 text-amber-400" />
+                      )}
                     </div>
-
-                    {avatarError && (
-                      <div className="text-[11px] text-rose-400 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 shrink-0" />
-                        <span>{avatarError}</span>
-                      </div>
-                    )}
-
-                    {/* Quick sample avatars */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 flex-wrap">
-                      <span className="text-neutral-500">Samples:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80';
-                          setAvatarUrlInput(u);
-                          handleLoadAvatarUrl(u);
-                        }}
-                        className="text-amber-400 hover:underline cursor-pointer"
-                      >
-                        Studio DJ
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=400&auto=format&fit=crop&q=80';
-                          setAvatarUrlInput(u);
-                          handleLoadAvatarUrl(u);
-                        }}
-                        className="text-amber-400 hover:underline cursor-pointer"
-                      >
-                        Vocal Mic
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=80';
-                          setAvatarUrlInput(u);
-                          handleLoadAvatarUrl(u);
-                        }}
-                        className="text-amber-400 hover:underline cursor-pointer"
-                      >
-                        Abstract
-                      </button>
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold text-white block truncate">
+                        {profileImage ? 'Custom Photo Active' : 'Default Waveform Badge'}
+                      </span>
+                      <p className="text-[11px] text-neutral-400 truncate">
+                        {profileImage
+                          ? (profileImageUrl ? 'Loaded from URL' : 'Custom photo loaded')
+                          : 'Standard audio reactive center badge'}
+                      </p>
                     </div>
                   </div>
-                )}
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {onOpenProfileModal && (
+                      <button
+                        type="button"
+                        id="open-profile-modal-btn"
+                        onClick={onOpenProfileModal}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs rounded-lg transition-all cursor-pointer shadow-sm active:scale-95"
+                      >
+                        {profileImage ? 'Change Photo' : 'Choose Photo'}
+                      </button>
+                    )}
+                    {profileImage && (
+                      <button
+                        type="button"
+                        id="remove-profile-image-btn"
+                        onClick={() => {
+                          onProfileImageUpload?.(null);
+                          onProfileImageUrlChange?.(null);
+                        }}
+                        className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer border border-neutral-700"
+                        title="Revert back to default studio badge"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -941,32 +803,39 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             {settings.enableGradient !== false && (
               <div className="pt-2 border-t border-neutral-800/80 flex flex-col gap-2">
                 <span className="text-xs font-medium text-neutral-300">Color Representation Mode</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
                     { id: 'bottom-to-top', label: 'Bottom to Top', desc: 'Rises vertically from base to peaks' },
-                    { id: 'top-to-bottom', label: 'Top to Bottom', desc: 'Flows vertically from top peaks to base' },
-                    { id: 'left-to-right', label: 'Left to Right', desc: 'Horizontal flow from left side' },
-                    { id: 'right-to-left', label: 'Right to Left', desc: 'Horizontal flow from right side' },
+                    { id: 'left-to-right', label: 'Left to Right', desc: 'Horizontal flow across waveform' },
                     { id: 'inside-out-horizontal', label: 'Inside Out (H)', desc: 'Center outwards to left/right wings' },
                     { id: 'inside-out-vertical', label: 'Inside Out (V)', desc: 'Midline center outwards vertically' },
                     { id: 'inside-out-circular', label: 'Inside Out (Circular)', desc: 'Radial bloom from avatar/center' },
                     { id: 'alternate-bars', label: 'Alternate Each Bar', desc: 'Alternates primary & accent per bar' },
-                  ].map((mode) => (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      id={`color-mode-btn-${mode.id}`}
-                      onClick={() => onSettingsChange({ colorMode: mode.id as ColorRepresentationMode })}
-                      className={`p-2 rounded-lg border text-left flex flex-col gap-0.5 cursor-pointer transition-all ${
-                        (settings.colorMode || 'bottom-to-top') === mode.id
-                          ? 'bg-neutral-800 border-cyan-400 text-white shadow-sm ring-1 ring-cyan-500/20'
-                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
-                      }`}
-                    >
-                      <span className="text-xs font-semibold text-white">{mode.label}</span>
-                      <span className="text-[10px] text-neutral-400">{mode.desc}</span>
-                    </button>
-                  ))}
+                  ].map((mode) => {
+                    const isSelected =
+                      (settings.colorMode === 'top-to-bottom'
+                        ? 'bottom-to-top'
+                        : settings.colorMode === 'right-to-left'
+                        ? 'left-to-right'
+                        : settings.colorMode || 'bottom-to-top') === mode.id;
+
+                    return (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        id={`color-mode-btn-${mode.id}`}
+                        onClick={() => onSettingsChange({ colorMode: mode.id as ColorRepresentationMode })}
+                        className={`p-2 rounded-lg border text-left flex flex-col gap-0.5 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-neutral-800 border-cyan-400 text-white shadow-sm ring-1 ring-cyan-500/20'
+                            : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
+                        }`}
+                      >
+                        <span className="text-xs font-semibold text-white">{mode.label}</span>
+                        <span className="text-[10px] text-neutral-400">{mode.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -992,38 +861,79 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
           {/* Custom Color Pickers */}
           <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-neutral-950/70 border border-neutral-800">
-            <div>
-              <label className="text-xs font-semibold text-neutral-300">Custom Colors</label>
-              <p className="text-[11px] text-neutral-400">Directly fine-tune the primary and secondary colors</p>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <label className="text-xs font-semibold text-neutral-300">Custom Colors</label>
+                <p className="text-[11px] text-neutral-400">Directly fine-tune the primary and secondary colors</p>
+              </div>
+
+              {settings.enableGradient !== false && (
+                <button
+                  type="button"
+                  id="switch-colors-btn"
+                  onClick={handleSwitchColors}
+                  className="p-2 rounded-lg bg-neutral-900 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-400/60 text-cyan-400 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+                  title="Switch primary and secondary colors"
+                  aria-label="Switch primary and secondary colors"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className={`grid grid-cols-1 ${settings.enableGradient !== false ? 'sm:grid-cols-2' : ''} gap-3 pt-1`}>
               <div>
                 <span className="text-[11px] text-neutral-400 block mb-1">Primary Color</span>
-                <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
+                <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800 focus-within:border-cyan-400/60 transition-colors">
                   <input
                     type="color"
-                    value={settings.primaryColor || '#06b6d4'}
-                    onChange={(e) => onSettingsChange({ primaryColor: e.target.value, useCustomColors: true })}
-                    className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
+                    value={primaryColorValue.startsWith('#') && primaryColorValue.length === 7 ? primaryColorValue : '#06b6d4'}
+                    onChange={(e) => {
+                      setPrimaryHex(e.target.value.toUpperCase());
+                      onSettingsChange({ primaryColor: e.target.value, useCustomColors: true });
+                    }}
+                    className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent shrink-0"
+                    title="Open color picker"
                   />
-                  <span className="font-mono text-xs text-neutral-300 uppercase">{settings.primaryColor || '#06b6d4'}</span>
+                  <input
+                    type="text"
+                    id="primary-color-hex-input"
+                    value={primaryHex}
+                    onChange={(e) => handlePrimaryHexChange(e.target.value)}
+                    onBlur={handlePrimaryHexBlur}
+                    placeholder="#06B6D4"
+                    maxLength={7}
+                    spellCheck={false}
+                    className="w-full bg-transparent font-mono text-xs text-neutral-200 uppercase outline-none focus:text-white"
+                  />
                 </div>
               </div>
 
               {settings.enableGradient !== false && (
                 <div>
                   <span className="text-[11px] text-neutral-400 block mb-1">Secondary / Gradient Color</span>
-                  <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800">
+                  <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800 focus-within:border-cyan-400/60 transition-colors">
                     <input
                       type="color"
-                      value={settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
-                      onChange={(e) => onSettingsChange({ gradientColor: e.target.value, primaryGradientEnd: e.target.value, useCustomColors: true })}
-                      className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
+                      value={secondaryColorValue.startsWith('#') && secondaryColorValue.length === 7 ? secondaryColorValue : '#38bdf8'}
+                      onChange={(e) => {
+                        setSecondaryHex(e.target.value.toUpperCase());
+                        onSettingsChange({ gradientColor: e.target.value, primaryGradientEnd: e.target.value, useCustomColors: true });
+                      }}
+                      className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent shrink-0"
+                      title="Open color picker"
                     />
-                    <span className="font-mono text-xs text-neutral-300 uppercase">
-                      {settings.gradientColor || settings.primaryGradientEnd || '#38bdf8'}
-                    </span>
+                    <input
+                      type="text"
+                      id="secondary-color-hex-input"
+                      value={secondaryHex}
+                      onChange={(e) => handleSecondaryHexChange(e.target.value)}
+                      onBlur={handleSecondaryHexBlur}
+                      placeholder="#38BDF8"
+                      maxLength={7}
+                      spellCheck={false}
+                      className="w-full bg-transparent font-mono text-xs text-neutral-200 uppercase outline-none focus:text-white"
+                    />
                   </div>
                 </div>
               )}
@@ -1401,340 +1311,55 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           </div>
 
-          {/* Custom Media Backdrop: Image Artwork or Looping Video */}
+          {/* Custom Media Backdrop */}
           <div className="p-3.5 bg-neutral-950/70 rounded-xl border border-neutral-800 flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <span className="text-xs font-semibold text-neutral-200">Custom Backdrop Media</span>
-                <p className="text-[11px] text-neutral-400">Add an album artwork image or looping video backdrop behind the visualizer</p>
+                <span className="text-xs font-semibold text-neutral-200">Backdrop Media</span>
+                <p className="text-[11px] text-neutral-400">Add an image or video backdrop behind the visualizer</p>
               </div>
 
-              {/* Media Switcher: Image Artwork vs Looping Video */}
-              <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800 self-start sm:self-auto">
+              {onOpenBackgroundModal && (
                 <button
                   type="button"
-                  id="media-tab-image"
-                  onClick={() => setBgMediaType('image')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                    bgMediaType === 'image'
-                      ? 'bg-neutral-800 text-white shadow-sm'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
+                  id="open-backdrop-modal-btn"
+                  onClick={onOpenBackgroundModal}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black font-semibold rounded-lg text-xs transition-all cursor-pointer shadow-sm active:scale-95 self-start sm:self-auto"
                 >
-                  <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Image Artwork</span>
-                  {backgroundImage && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>{(backgroundImage || backgroundVideo) ? 'Change Backdrop' : 'Choose Backdrop'}</span>
                 </button>
-                <button
-                  type="button"
-                  id="media-tab-video"
-                  onClick={() => setBgMediaType('video')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                    bgMediaType === 'video'
-                      ? 'bg-neutral-800 text-white shadow-sm'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
-                >
-                  <Film className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Video Background</span>
-                  {backgroundVideo && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
-                </button>
-              </div>
+              )}
             </div>
 
-            {/* Sub-view: Image Artwork */}
-            {bgMediaType === 'image' && (
-              <div className="flex flex-col gap-3 pt-1">
-                {backgroundImage && (
-                  <div className="flex items-center justify-between p-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-lg">
-                    <span className="text-xs font-medium text-emerald-300">✓ Image Artwork Active</span>
-                    <button
-                      onClick={() => {
-                        onBackgroundImageUpload(null);
-                        onBackgroundImageUrlChange?.(null);
-                      }}
-                      className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
-                    >
-                      Remove Image
-                    </button>
-                  </div>
-                )}
-
-                {/* Method selector: Upload File vs Image URL */}
+            {/* Active Backdrop Status Banner */}
+            {(backgroundImage || backgroundVideo) ? (
+              <div className="flex items-center justify-between p-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-lg">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800">
-                    <button
-                      type="button"
-                      onClick={() => setBgMode('upload')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        bgMode === 'upload'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      Upload File
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBgMode('url')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        bgMode === 'url'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      <Link2 className="w-3 h-3 text-cyan-400" />
-                      <span>Image URL</span>
-                    </button>
-                  </div>
+                  {backgroundVideo ? (
+                    <Film className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <ImageIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+                  )}
+                  <span className="text-xs font-medium text-emerald-300">
+                    {backgroundVideo ? 'Video backdrop active' : 'Image backdrop active'}
+                  </span>
                 </div>
-
-                {bgMode === 'upload' ? (
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700 transition-colors">
-                      <ImageIcon className="w-4 h-4 text-cyan-400" />
-                      <span>Choose Image File...</span>
-                      <input
-                        id="background-image-input"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          type="url"
-                          placeholder="https://example.com/album-artwork.jpg"
-                          value={bgUrlInput}
-                          onChange={(e) => setBgUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleLoadBgUrl();
-                            }
-                          }}
-                          className="w-full bg-neutral-900 border border-neutral-800 focus:border-cyan-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 font-mono"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleLoadBgUrl()}
-                        disabled={isBgLoading || !bgUrlInput.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        {isBgLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Link2 className="w-3.5 h-3.5" />
-                        )}
-                        <span>Load URL</span>
-                      </button>
-                    </div>
-
-                    {bgError && (
-                      <div className="text-[11px] text-rose-400 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 shrink-0" />
-                        <span>{bgError}</span>
-                      </div>
-                    )}
-
-                    {/* Quick sample wallpapers */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 flex-wrap">
-                      <span className="text-neutral-500">Samples:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1200&auto=format&fit=crop&q=80';
-                          setBgUrlInput(u);
-                          handleLoadBgUrl(u);
-                        }}
-                        className="text-cyan-400 hover:underline cursor-pointer"
-                      >
-                        Cyber Grid
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1200&auto=format&fit=crop&q=80';
-                          setBgUrlInput(u);
-                          handleLoadBgUrl(u);
-                        }}
-                        className="text-cyan-400 hover:underline cursor-pointer"
-                      >
-                        Studio Noir
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&auto=format&fit=crop&q=80';
-                          setBgUrlInput(u);
-                          handleLoadBgUrl(u);
-                        }}
-                        className="text-cyan-400 hover:underline cursor-pointer"
-                      >
-                        Neon Stage
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onBackgroundImageUpload(null);
+                    onBackgroundImageUrlChange?.(null);
+                    onBackgroundVideoUpload?.(null, null);
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                >
+                  Remove Backdrop
+                </button>
               </div>
-            )}
-
-            {/* Sub-view: Video Background */}
-            {bgMediaType === 'video' && (
-              <div className="flex flex-col gap-3 pt-1">
-                {backgroundVideo && (
-                  <div className="flex items-center justify-between p-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Film className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="text-xs font-medium text-emerald-300">
-                        ✓ Video Loop Active {backgroundVideo.videoWidth > 0 ? `(${backgroundVideo.videoWidth}x${backgroundVideo.videoHeight}` : ''}
-                        {backgroundVideo.duration ? ` • ${backgroundVideo.duration.toFixed(1)}s loop)` : ')'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onBackgroundVideoUpload?.(null, null);
-                        setBgVideoError(null);
-                      }}
-                      className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
-                    >
-                      Remove Video
-                    </button>
-                  </div>
-                )}
-
-                {/* Method selector: Upload Video File vs Video URL */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 p-0.5 bg-neutral-900 rounded-lg border border-neutral-800">
-                    <button
-                      type="button"
-                      onClick={() => setBgVideoMode('upload')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        bgVideoMode === 'upload'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      Upload Video File
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBgVideoMode('url')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                        bgVideoMode === 'url'
-                          ? 'bg-neutral-800 text-white shadow-sm'
-                          : 'text-neutral-400 hover:text-neutral-200'
-                      }`}
-                    >
-                      <Link2 className="w-3 h-3 text-cyan-400" />
-                      <span>Video URL</span>
-                    </button>
-                  </div>
-                </div>
-
-                {bgVideoMode === 'upload' ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-medium cursor-pointer border border-neutral-700 transition-colors">
-                        <Video className="w-4 h-4 text-cyan-400" />
-                        <span>Choose Video File...</span>
-                        <input
-                          id="background-video-input"
-                          type="file"
-                          accept="video/mp4,video/webm,video/quicktime,video/*"
-                          onChange={handleVideoFileChange}
-                          className="hidden"
-                        />
-                      </label>
-                      {isBgVideoLoading && (
-                        <div className="flex items-center gap-1.5 text-xs text-cyan-400">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Processing video file...</span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-neutral-400">
-                      Supports MP4, WebM, and MOV video files. The video loops in real-time behind your audio visualizer.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          type="url"
-                          placeholder="https://example.com/loop.mp4"
-                          value={bgVideoUrlInput}
-                          onChange={(e) => setBgVideoUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleLoadBgVideoUrl();
-                            }
-                          }}
-                          className="w-full bg-neutral-900 border border-neutral-800 focus:border-cyan-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 font-mono"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleLoadBgVideoUrl()}
-                        disabled={isBgVideoLoading || !bgVideoUrlInput.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        {isBgVideoLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Video className="w-3.5 h-3.5" />
-                        )}
-                        <span>Load Video</span>
-                      </button>
-                    </div>
-
-                    {bgVideoError && (
-                      <div className="text-[11px] text-rose-400 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 shrink-0" />
-                        <span>{bgVideoError}</span>
-                      </div>
-                    )}
-
-                    {/* Curated Sample Videos */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 flex-wrap">
-                      <span className="text-neutral-500">Samples:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
-                          setBgVideoUrlInput(u);
-                          handleLoadBgVideoUrl(u);
-                        }}
-                        className="text-cyan-400 hover:underline cursor-pointer"
-                      >
-                        Ambient Bloom
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/friday.mp4';
-                          setBgVideoUrlInput(u);
-                          handleLoadBgVideoUrl(u);
-                        }}
-                        className="text-cyan-400 hover:underline cursor-pointer"
-                      >
-                        Urban Motion
-                      </button>
-                    </div>
-                  </div>
-                )}
+            ) : (
+              <div className="p-2.5 bg-neutral-900/40 border border-neutral-800/60 rounded-lg flex items-center justify-between">
+                <span className="text-xs text-neutral-400">No media backdrop active • Renders background preset</span>
               </div>
             )}
 

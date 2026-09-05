@@ -744,6 +744,7 @@ export const SAMPLE_PRESETS: SampleAudioPreset[] = [
     description: 'Energetic 80s synth bassline, 16th arpeggios, and 808 beat',
     duration: 16,
     bpm: 120,
+    url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3',
     generator: (ctx) => audioEngine.generateDemoTrack('synthwave').then((r) => r.buffer),
   },
   {
@@ -753,6 +754,7 @@ export const SAMPLE_PRESETS: SampleAudioPreset[] = [
     description: 'Warm electric Rhodes piano 7th chords with vintage ambiance',
     duration: 14,
     bpm: 85,
+    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3',
     generator: (ctx) => audioEngine.generateDemoTrack('chill-lofi').then((r) => r.buffer),
   },
   {
@@ -762,6 +764,7 @@ export const SAMPLE_PRESETS: SampleAudioPreset[] = [
     description: 'Deep resonant sub bass and swelling atmospheric brass',
     duration: 15,
     bpm: 70,
+    url: 'https://assets.mixkit.co/music/preview/mixkit-deep-urban-623.mp3',
     generator: (ctx) => audioEngine.generateDemoTrack('cinematic').then((r) => r.buffer),
   },
   {
@@ -771,6 +774,7 @@ export const SAMPLE_PRESETS: SampleAudioPreset[] = [
     description: 'Harmonic guitar-style plucked arpeggios with open chords',
     duration: 12,
     bpm: 100,
+    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3',
     generator: (ctx) => audioEngine.generateDemoTrack('acoustic').then((r) => r.buffer),
   },
   {
@@ -780,6 +784,7 @@ export const SAMPLE_PRESETS: SampleAudioPreset[] = [
     description: 'Speech formant cadence with conversational dynamics & pauses',
     duration: 10,
     bpm: 0,
+    url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3',
     generator: (ctx) => audioEngine.generateDemoTrack('podcast').then((r) => r.buffer),
   },
 ];

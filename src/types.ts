@@ -151,4 +151,5 @@ export interface SampleAudioPreset {
   duration: number;
   bpm: number;
   generator: (ctx: AudioContext) => Promise<AudioBuffer>;
+  url?: string;
 }

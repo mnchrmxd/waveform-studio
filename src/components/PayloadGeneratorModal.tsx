@@ -73,6 +73,38 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
   const [localBgBase64, setLocalBgBase64] = useState<string | null>(null);
   const [isPreparingAssets, setIsPreparingAssets] = useState(false);
 
+  // Determine if assets originate from a URL (remote preset or user-provided link)
+  const isAudioUrl = Boolean(
+    audioUrl && (audioUrl.startsWith('http://') || audioUrl.startsWith('https://'))
+  );
+  const effectiveAudioUrl = isAudioUrl ? audioUrl : null;
+
+  const isProfileUrl = Boolean(
+    (profileImageUrl && (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://'))) ||
+    (profileImage?.src && (profileImage.src.startsWith('http://') || profileImage.src.startsWith('https://')))
+  );
+  const effectiveProfileUrl = isProfileUrl
+    ? (profileImageUrl && (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://'))
+        ? profileImageUrl
+        : profileImage?.src || null)
+    : null;
+
+  const isBackgroundUrl = Boolean(
+    (backgroundVideoUrl && (backgroundVideoUrl.startsWith('http://') || backgroundVideoUrl.startsWith('https://'))) ||
+    (backgroundVideo?.src && (backgroundVideo.src.startsWith('http://') || backgroundVideo.src.startsWith('https://'))) ||
+    (backgroundImageUrl && (backgroundImageUrl.startsWith('http://') || backgroundImageUrl.startsWith('https://'))) ||
+    (backgroundImage?.src && (backgroundImage.src.startsWith('http://') || backgroundImage.src.startsWith('https://')))
+  );
+  const effectiveBackgroundUrl = isBackgroundUrl
+    ? (backgroundVideoUrl && (backgroundVideoUrl.startsWith('http://') || backgroundVideoUrl.startsWith('https://'))
+        ? backgroundVideoUrl
+        : (backgroundVideo?.src && (backgroundVideo.src.startsWith('http://') || backgroundVideo.src.startsWith('https://')))
+          ? backgroundVideo.src
+          : (backgroundImageUrl && (backgroundImageUrl.startsWith('http://') || backgroundImageUrl.startsWith('https://')))
+            ? backgroundImageUrl
+            : backgroundImage?.src || null)
+    : null;
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -80,8 +112,8 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
     const prepareAssets = async () => {
       setIsPreparingAssets(true);
       try {
-        // 1. Audio
-        if (!audioUrl && audioBuffer) {
+        // 1. Audio: ONLY generate base64 if audio is NOT from a URL
+        if (!isAudioUrl && audioBuffer) {
           try {
             const wavBlob = audioBufferToWavBlob(
               audioBuffer,
@@ -98,11 +130,11 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
           }
         }
 
-        // 2. Profile Image
-        if (!profileImageUrl && profileImage && profileImage.src) {
+        // 2. Profile Image: ONLY generate base64 if image is NOT from a URL
+        if (!isProfileUrl && profileImage && profileImage.src) {
           if (profileImage.src.startsWith('data:')) {
             if (isMounted) setLocalProfileBase64(profileImage.src);
-          } else {
+          } else if (profileImage.src.startsWith('blob:')) {
             try {
               const canvas = document.createElement('canvas');
               canvas.width = profileImage.naturalWidth || 200;
@@ -118,11 +150,11 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
           }
         }
 
-        // 3. Background Image
-        if (!backgroundImageUrl && backgroundImage && backgroundImage.src) {
+        // 3. Background Image: ONLY generate base64 if background is NOT from a URL
+        if (!isBackgroundUrl && backgroundImage && backgroundImage.src) {
           if (backgroundImage.src.startsWith('data:')) {
             if (isMounted) setLocalBgBase64(backgroundImage.src);
-          } else {
+          } else if (backgroundImage.src.startsWith('blob:')) {
             try {
               const canvas = document.createElement('canvas');
               canvas.width = backgroundImage.naturalWidth || 800;
@@ -151,6 +183,9 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
     isOpen,
     audioUrl,
     audioBuffer,
+    isAudioUrl,
+    isProfileUrl,
+    isBackgroundUrl,
     exportConfig.useTrim,
     exportConfig.trimStart,
     exportConfig.trimEnd,
@@ -162,25 +197,27 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
 
   // Construct optimized payload strictly from main page + export settings, ignoring useless parameters
   const payloadObject = useMemo(() => {
-    // Audio specification
+    // Audio specification: Prioritize URL if available, never base64 when a preset or source has a URL
     let audioField: string | undefined = undefined;
-    if (audioUrl) {
-      audioField = audioUrl;
+    if (effectiveAudioUrl) {
+      audioField = effectiveAudioUrl;
     } else if (localAudioBase64) {
       audioField = localAudioBase64;
+    } else if (audioUrl) {
+      audioField = audioUrl;
     } else {
       audioField = 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3';
     }
 
-    // Profile specification (only if enabled)
+    // Profile specification: Prioritize URL if preset/remote URL, only fallback to base64 for local upload
     const profileField = settings.showProfileImage
-      ? (profileImageUrl || localProfileBase64 || undefined)
+      ? (effectiveProfileUrl || localProfileBase64 || undefined)
       : undefined;
 
-    // Background specification (only if not transparent)
+    // Background specification: Prioritize URL if preset/remote URL, only fallback to base64 for local upload
     const isTransparent = settings.backgroundType === 'transparent';
     const bgField = !isTransparent
-      ? (backgroundImageUrl || localBgBase64 || undefined)
+      ? (effectiveBackgroundUrl || localBgBase64 || undefined)
       : undefined;
 
     // Clean, pruned settings object ignoring useless parameters
@@ -294,11 +331,15 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
       ...(bgField ? { backgroundImage: bgField } : {}),
     };
   }, [
+    effectiveAudioUrl,
     audioUrl,
     localAudioBase64,
+    effectiveProfileUrl,
     profileImageUrl,
     localProfileBase64,
+    effectiveBackgroundUrl,
     backgroundImageUrl,
+    backgroundVideoUrl,
     localBgBase64,
     exportConfig,
     settings,
@@ -553,9 +594,19 @@ renderVisualizer().catch(console.error);`;
           <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
             🎨 {theme.name}
           </span>
-          {audioUrl && (
+          {effectiveAudioUrl && (
             <span className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 whitespace-nowrap">
-              🔗 Remote Audio URL
+              🔗 Audio: URL Export
+            </span>
+          )}
+          {effectiveProfileUrl && settings.showProfileImage && (
+            <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-700/60 text-amber-300 whitespace-nowrap">
+              🖼️ Profile: URL Export
+            </span>
+          )}
+          {effectiveBackgroundUrl && settings.backgroundType !== 'transparent' && (
+            <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-700/60 text-purple-300 whitespace-nowrap">
+              🌌 Backdrop: URL Export
             </span>
           )}
         </div>

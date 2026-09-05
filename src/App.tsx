@@ -4,9 +4,9 @@ import { VisualizerCanvas } from './components/VisualizerCanvas';
 import { AudioControls } from './components/AudioControls';
 import { ControlPanel } from './components/ControlPanel';
 import { ExportModal } from './components/ExportModal';
-import { DemoTracksModal } from './components/DemoTracksModal';
-import { RecordMicModal } from './components/RecordMicModal';
-import { AudioUrlModal } from './components/AudioUrlModal';
+import { AudioModal } from './components/AudioModal';
+import { BackgroundModal } from './components/BackgroundModal';
+import { ProfileModal } from './components/ProfileModal';
 import { audioEngine } from './services/audioEngine';
 import { AudioMetadata, ColorTheme, SampleAudioPreset, VisualizerSettings, WaveformData, AspectRatioType } from './types';
 import { COLOR_THEMES, DEFAULT_SETTINGS } from './data/presets';
@@ -44,11 +44,11 @@ export default function App() {
   const [profileImage, setProfileImage] = useState<HTMLImageElement | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
-  // Modals
+  // Unified 3-Button Popups (Audio, Background, Profile) + Export
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState<boolean>(false);
+  const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState<boolean>(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
-  const [isRecordModalOpen, setIsRecordModalOpen] = useState<boolean>(false);
-  const [isAudioUrlModalOpen, setIsAudioUrlModalOpen] = useState<boolean>(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,6 +68,7 @@ export default function App() {
         const result = await audioEngine.generateDemoTrack('synthwave');
         if (!mounted) return;
         setAudioBuffer(result.buffer);
+        setAudioUrl('https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3');
         setWaveformData(result.waveform);
         setMetadata(result.metadata);
         setDuration(result.buffer.duration);
@@ -189,7 +190,7 @@ export default function App() {
       }
       const result = await audioEngine.generateDemoTrack(preset.id);
       setAudioBuffer(result.buffer);
-      setAudioUrl(null);
+      setAudioUrl(preset.url || null);
       setWaveformData(result.waveform);
       setMetadata(result.metadata);
       setDuration(result.buffer.duration);
@@ -199,7 +200,7 @@ export default function App() {
         trackTitle: preset.name,
         artistName: preset.genre,
       }));
-      setIsDemoModalOpen(false);
+      setIsAudioModalOpen(false);
     } catch (err) {
       console.error('Preset loading failed:', err);
     } finally {
@@ -311,11 +312,8 @@ export default function App() {
       {/* Top Application Header */}
       <Header
         metadata={metadata}
-        onUploadClick={() => fileInputRef.current?.click()}
-        onDemoClick={() => setIsDemoModalOpen(true)}
-        onRecordClick={() => setIsRecordModalOpen(true)}
+        onAudioClick={() => setIsAudioModalOpen(true)}
         onExportClick={() => setIsExportModalOpen(true)}
-        onUrlAudioClick={() => setIsAudioUrlModalOpen(true)}
         isExportDisabled={!audioBuffer}
       />
 
@@ -340,9 +338,6 @@ export default function App() {
             profileImage={profileImage}
             onAspectRatioChange={handleAspectRatioChange}
             onDropAudioFile={handleFileUpload}
-            onToggleProfile={() => handleSettingsChange({ showProfileImage: !settings.showProfileImage })}
-            onToggleJoint={() => handleSettingsChange({ enableJoint: !settings.enableJoint })}
-            onToggleTrackInfo={() => handleSettingsChange({ showTrackInfo: !settings.showTrackInfo })}
           />
 
           {/* Audio Playback Timeline & Transport Controls */}
@@ -394,9 +389,71 @@ export default function App() {
             profileImageUrl={profileImageUrl}
             onProfileImageUpload={setProfileImage}
             onProfileImageUrlChange={setProfileImageUrl}
+            onOpenProfileModal={() => setIsProfileModalOpen(true)}
+            onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
           />
         </section>
       </main>
+
+      {/* 1. Unified Audio Modal: Upload File, Link URL, Record Mic, or Presets */}
+      <AudioModal
+        isOpen={isAudioModalOpen}
+        onClose={() => setIsAudioModalOpen(false)}
+        metadata={metadata}
+        isPlaying={isPlaying}
+        onTogglePlay={handleTogglePlay}
+        onFileUpload={handleFileUpload}
+        onLoadUrl={handleLoadAudioUrl}
+        onSelectPreset={handleSelectPreset}
+        onRecordingComplete={handleRecordingComplete}
+        isLoading={isLoadingAudio}
+      />
+
+      {/* 2. Unified Background Modal: Auto-detects Image vs Video, Camera, Presets, Blur & Dimming */}
+      <BackgroundModal
+        isOpen={isBackgroundModalOpen}
+        onClose={() => setIsBackgroundModalOpen(false)}
+        backgroundImage={backgroundImage}
+        backgroundImageUrl={backgroundImageUrl}
+        onBackgroundImageUpload={(img, url) => {
+          setBackgroundImage(img);
+          setBackgroundImageUrl(url || null);
+          if (img) {
+            setBackgroundVideo(null);
+            setBackgroundVideoUrl(null);
+          }
+        }}
+        backgroundVideo={backgroundVideo}
+        backgroundVideoUrl={backgroundVideoUrl}
+        onBackgroundVideoUpload={(vid, url) => {
+          setBackgroundVideo(vid);
+          setBackgroundVideoUrl(url || null);
+          if (vid) {
+            setBackgroundImage(null);
+            setBackgroundImageUrl(null);
+          }
+        }}
+        backgroundBlur={backgroundBlur}
+        onBackgroundBlurChange={setBackgroundBlur}
+        backgroundDim={backgroundDim}
+        onBackgroundDimChange={setBackgroundDim}
+      />
+
+      {/* 3. Unified Profile Modal: Upload File, Link URL, Camera Selfie, Presets, Shape & Glow */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        profileImage={profileImage}
+        profileImageUrl={profileImageUrl}
+        onProfileImageUpload={(img) => {
+          setProfileImage(img);
+        }}
+        onProfileImageUrlChange={(url) => {
+          setProfileImageUrl(url);
+        }}
+        settings={settings}
+        onSettingsChange={handleSettingsChange}
+      />
 
       {/* Fast Headless Export Modal */}
       <ExportModal
@@ -422,29 +479,6 @@ export default function App() {
         profileImage={profileImage}
         profileImageUrl={profileImageUrl}
         onSettingsChange={handleSettingsChange}
-      />
-
-      {/* Demo Tracks Modal */}
-      <DemoTracksModal
-        isOpen={isDemoModalOpen}
-        onClose={() => setIsDemoModalOpen(false)}
-        onSelectPreset={handleSelectPreset}
-        isLoading={isLoadingAudio}
-      />
-
-      {/* Record Mic Modal */}
-      <RecordMicModal
-        isOpen={isRecordModalOpen}
-        onClose={() => setIsRecordModalOpen(false)}
-        onRecordingComplete={handleRecordingComplete}
-      />
-
-      {/* Remote Audio URL Modal */}
-      <AudioUrlModal
-        isOpen={isAudioUrlModalOpen}
-        onClose={() => setIsAudioUrlModalOpen(false)}
-        onLoadUrl={handleLoadAudioUrl}
-        isLoading={isLoadingAudio}
       />
     </div>
   );
