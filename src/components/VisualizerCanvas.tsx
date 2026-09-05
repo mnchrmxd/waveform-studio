@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Maximize2, Minimize2, Sparkles } from 'lucide-react';
+import { Maximize2, Minimize2, Sparkles, Download, Upload, Check, AlertCircle } from 'lucide-react';
 import { AspectRatioType, ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { OfflineAudioAnalyzer, SpectrumData } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
@@ -22,6 +22,11 @@ interface VisualizerCanvasProps {
   profileImage?: HTMLImageElement | null;
   onAspectRatioChange: (aspect: AspectRatioType) => void;
   onDropAudioFile?: (file: File) => void;
+  onExportClick?: () => void;
+  isExportDisabled?: boolean;
+  onImportJson?: (jsonData: any) => void;
+  onImportError?: (errorMessage: string) => void;
+  importStatus?: { type: 'success' | 'error'; message: string } | null;
   onToggleProfile?: () => void;
   onToggleJoint?: () => void;
   onToggleTrackInfo?: () => void;
@@ -43,12 +48,18 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
   profileImage,
   onAspectRatioChange,
   onDropAudioFile,
+  onExportClick,
+  isExportDisabled,
+  onImportJson,
+  onImportError,
+  importStatus,
   onToggleProfile,
   onToggleJoint,
   onToggleTrackInfo,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -287,10 +298,46 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
+      if (file.name.endsWith('.json') || file.type === 'application/json') {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const text = event.target?.result;
+            if (typeof text !== 'string') return;
+            const parsed = JSON.parse(text);
+            onImportJson?.(parsed);
+          } catch (err: any) {
+            console.error('Failed to parse dropped JSON file:', err);
+            onImportError?.(err.message || 'Invalid JSON syntax');
+          }
+        };
+        reader.readAsText(file);
+        return;
+      }
       if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i)) {
         onDropAudioFile?.(file);
       }
     }
+  };
+
+  const handleJsonFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text !== 'string') return;
+        const parsed = JSON.parse(text);
+        onImportJson?.(parsed);
+      } catch (err: any) {
+        console.error('Failed to parse JSON file:', err);
+        onImportError?.(err.message || 'Invalid JSON syntax');
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Aspect ratio helper CSS class
@@ -374,7 +421,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
       {/* Canvas Viewport Frame */}
       <div
         className="w-full flex items-center justify-center p-2 sm:p-4 bg-gradient-to-b from-neutral-950 via-neutral-900/40 to-neutral-950"
-        style={{ minHeight: '360px' }}
+        style={{ minHeight: '300px' }}
       >
         <div
           className={`relative w-full max-w-full flex items-center justify-center rounded-xl overflow-hidden shadow-2xl transition-all ${
@@ -404,6 +451,65 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Action Bar under Visualizer */}
+      <div className="w-full px-3.5 sm:px-4 py-2.5 bg-neutral-950/90 border-t border-neutral-800/80 flex items-center justify-between gap-3 z-10">
+        {/* Left: Import JSON button where user uploads JSON settings */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <input
+            ref={jsonFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleJsonFileInputChange}
+            className="hidden"
+            id="visualizer-import-json-input"
+          />
+          <button
+            type="button"
+            id="visualizer-import-json-btn"
+            onClick={() => jsonFileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-cyan-500/60 text-neutral-200 hover:text-white text-xs font-semibold shadow-sm transition-all cursor-pointer active:scale-95 group shrink-0"
+            title="Upload and apply custom JSON visualizer settings"
+          >
+            <Upload className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Import JSON</span>
+          </button>
+
+          {importStatus && (
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all truncate animate-fadeIn ${
+                importStatus.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              }`}
+            >
+              {importStatus.type === 'success' ? (
+                <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+              )}
+              <span className="truncate">{importStatus.message}</span>
+            </div>
+          )}
+        </div>
+
+        {onExportClick && (
+          <button
+            id="visualizer-export-video-btn"
+            onClick={onExportClick}
+            disabled={isExportDisabled}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-xs shadow-lg transition-all cursor-pointer ${
+              isExportDisabled
+                ? 'bg-neutral-800 text-neutral-500 border border-neutral-700/50 cursor-not-allowed'
+                : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-cyan-500/25 ring-1 ring-cyan-400/30 active:scale-[0.98]'
+            }`}
+            title="Export high-resolution MP4 or transparent Alpha WebM video"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Video</span>
+          </button>
+        )}
       </div>
     </div>
   );

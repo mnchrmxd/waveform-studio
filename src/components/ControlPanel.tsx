@@ -153,6 +153,39 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     }
   };
 
+  const backgroundColorValue = settings.backgroundColor || '#09090b';
+  const [bgHex, setBgHex] = useState(backgroundColorValue);
+
+  useEffect(() => {
+    setBgHex(backgroundColorValue);
+  }, [backgroundColorValue]);
+
+  const handleBgHexChange = (val: string) => {
+    setBgHex(val);
+    const cleaned = val.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted;
+      onSettingsChange({ backgroundColor: fullHex, backgroundType: 'custom-solid' });
+    }
+  };
+
+  const handleBgHexBlur = () => {
+    const cleaned = bgHex.trim();
+    const formatted = cleaned.startsWith('#') ? cleaned : `#${cleaned}`;
+    if (/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(formatted)) {
+      const fullHex = (formatted.length === 4
+        ? `#${formatted[1]}${formatted[1]}${formatted[2]}${formatted[2]}${formatted[3]}${formatted[3]}`
+        : formatted).toUpperCase();
+      setBgHex(fullHex);
+      onSettingsChange({ backgroundColor: fullHex, backgroundType: 'custom-solid' });
+    } else {
+      setBgHex(backgroundColorValue.toUpperCase());
+    }
+  };
+
   const visualizerStyles: { id: WaveformStyle; name: string; icon: React.ReactNode; desc: string }[] = [
     {
       id: 'mirrored-bars',
@@ -1239,18 +1272,31 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 <p className="text-[11px] text-neutral-400">Choose a solid studio background color or select an ambient stage atmosphere</p>
               </div>
 
-              {/* Solid Color Picker */}
-              <div className="flex items-center gap-2 bg-neutral-900 px-2.5 py-1.5 rounded-lg border border-neutral-800 self-start sm:self-auto">
-                <span className="text-[11px] text-neutral-400 font-medium">Solid Color:</span>
+              {/* Solid Color Picker & Editable Hex Input */}
+              <div className="flex items-center gap-2 bg-neutral-900 p-1.5 rounded-lg border border-neutral-800 focus-within:border-cyan-400/60 transition-colors self-start sm:self-auto min-w-[210px]">
+                <span className="text-[11px] text-neutral-400 font-medium pl-1 shrink-0">Solid Color:</span>
                 <input
                   id="background-color-picker"
                   type="color"
-                  value={settings.backgroundColor || '#09090b'}
-                  onChange={(e) => onSettingsChange({ backgroundColor: e.target.value, backgroundType: 'custom-solid' })}
-                  className="w-5 h-5 rounded border-0 cursor-pointer bg-transparent"
+                  value={backgroundColorValue.startsWith('#') && backgroundColorValue.length === 7 ? backgroundColorValue : '#09090b'}
+                  onChange={(e) => {
+                    setBgHex(e.target.value.toUpperCase());
+                    onSettingsChange({ backgroundColor: e.target.value, backgroundType: 'custom-solid' });
+                  }}
+                  className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent shrink-0"
                   title="Pick Custom Background Color"
                 />
-                <span className="font-mono text-xs text-neutral-300 uppercase">{settings.backgroundColor || '#09090b'}</span>
+                <input
+                  type="text"
+                  id="background-color-hex-input"
+                  value={bgHex}
+                  onChange={(e) => handleBgHexChange(e.target.value)}
+                  onBlur={handleBgHexBlur}
+                  placeholder="#09090B"
+                  maxLength={7}
+                  spellCheck={false}
+                  className="w-full bg-transparent font-mono text-xs text-neutral-200 uppercase outline-none focus:text-white"
+                />
               </div>
             </div>
 

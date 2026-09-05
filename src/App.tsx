@@ -273,6 +273,151 @@ export default function App() {
     setSettings((prev) => ({ ...prev, aspectRatio: aspect }));
   };
 
+  // Import JSON configuration & customization handler
+  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleImportJson = (parsedData: any) => {
+    try {
+      if (!parsedData || typeof parsedData !== 'object') {
+        throw new Error('JSON file is not a valid object');
+      }
+
+      if (parsedData.__error) {
+        throw new Error(parsedData.__error);
+      }
+
+      // Locate settings within possible wrapper formats
+      const rawSettings =
+        parsedData.settings && typeof parsedData.settings === 'object'
+          ? parsedData.settings
+          : parsedData.visualizerSettings && typeof parsedData.visualizerSettings === 'object'
+          ? parsedData.visualizerSettings
+          : parsedData.config && typeof parsedData.config === 'object'
+          ? parsedData.config
+          : parsedData.preset && typeof parsedData.preset === 'object'
+          ? parsedData.preset
+          : parsedData;
+
+      const newSettings: Partial<VisualizerSettings> = {};
+
+      // Match all recognized settings from DEFAULT_SETTINGS
+      for (const [key, defaultVal] of Object.entries(DEFAULT_SETTINGS)) {
+        if (key in rawSettings && rawSettings[key] !== undefined && rawSettings[key] !== null) {
+          const val = rawSettings[key];
+          if (typeof defaultVal === 'number' && !isNaN(Number(val))) {
+            (newSettings as any)[key] = Number(val);
+          } else if (typeof defaultVal === 'boolean') {
+            (newSettings as any)[key] = Boolean(val);
+          } else if (typeof defaultVal === 'string' && typeof val === 'string') {
+            (newSettings as any)[key] = val;
+          }
+        }
+      }
+
+      // Support colors wrapper: { colors: { primary: '#...', secondary: '#...' } }
+      const colorsObj = parsedData.colors || rawSettings.colors;
+      if (colorsObj && typeof colorsObj === 'object') {
+        if (colorsObj.primary && typeof colorsObj.primary === 'string') {
+          newSettings.primaryColor = colorsObj.primary;
+          newSettings.useCustomColors = true;
+        }
+        if (colorsObj.secondary && typeof colorsObj.secondary === 'string') {
+          newSettings.gradientColor = colorsObj.secondary;
+          newSettings.primaryGradientEnd = colorsObj.secondary;
+          newSettings.useCustomColors = true;
+        }
+      }
+
+      // If primaryColor or gradientColor was in rawSettings, ensure custom colors are active
+      if (rawSettings.primaryColor || rawSettings.gradientColor) {
+        newSettings.useCustomColors = true;
+      }
+
+      // Match themeId if present
+      const themeId = rawSettings.themeId || parsedData.themeId;
+      if (themeId && typeof themeId === 'string') {
+        const found = COLOR_THEMES.find((t) => t.id === themeId);
+        if (found) {
+          setTheme(found);
+          newSettings.themeId = found.id;
+        }
+      }
+
+      // Aspect ratio from video spec
+      if (parsedData.video && typeof parsedData.video === 'object') {
+        const w = parsedData.video.width;
+        const h = parsedData.video.height;
+        if (w && h) {
+          if (w === 1080 && h === 1920) newSettings.aspectRatio = '9:16';
+          else if (w === 1080 && h === 1080) newSettings.aspectRatio = '1:1';
+          else if (w === 2560 && h === 1080) newSettings.aspectRatio = '21:9';
+          else if (w === 1920 && h === 1080) newSettings.aspectRatio = '16:9';
+        }
+      }
+
+      // Profile image if embedded as data URI or URL
+      const profileSrc =
+        parsedData.profileImage ||
+        parsedData.profileImageUrl ||
+        rawSettings.profileImage ||
+        rawSettings.profileImageUrl;
+      if (typeof profileSrc === 'string' && (profileSrc.startsWith('data:image') || profileSrc.startsWith('http') || profileSrc.startsWith('blob:'))) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          setProfileImage(img);
+          setProfileImageUrl(profileSrc);
+        };
+        img.src = profileSrc;
+        newSettings.showProfileImage = true;
+      }
+
+      // Background image if embedded as data URI or URL
+      const bgSrc =
+        parsedData.backgroundImage ||
+        parsedData.backgroundImageUrl ||
+        rawSettings.backgroundImage ||
+        rawSettings.backgroundImageUrl;
+      if (typeof bgSrc === 'string' && (bgSrc.startsWith('data:image') || bgSrc.startsWith('http') || bgSrc.startsWith('blob:'))) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          setBackgroundImage(img);
+          setBackgroundImageUrl(bgSrc);
+        };
+        img.src = bgSrc;
+        newSettings.backgroundType = 'custom-solid';
+      }
+
+      // Apply the imported settings
+      setSettings((prev) => ({
+        ...prev,
+        ...newSettings,
+      }));
+
+      setImportStatus({
+        type: 'success',
+        message: 'Settings applied!',
+      });
+      setTimeout(() => setImportStatus(null), 3500);
+    } catch (err: any) {
+      console.error('Import JSON failed:', err);
+      setImportStatus({
+        type: 'error',
+        message: err?.message || 'Invalid JSON file',
+      });
+      setTimeout(() => setImportStatus(null), 4000);
+    }
+  };
+
+  const handleImportError = (errorMessage: string) => {
+    setImportStatus({
+      type: 'error',
+      message: errorMessage || 'Invalid JSON file',
+    });
+    setTimeout(() => setImportStatus(null), 4000);
+  };
+
   // Auto-open ExportModal if navigating to /render or with ?jobId=
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -310,12 +455,7 @@ export default function App() {
       />
 
       {/* Top Application Header */}
-      <Header
-        metadata={metadata}
-        onAudioClick={() => setIsAudioModalOpen(true)}
-        onExportClick={() => setIsExportModalOpen(true)}
-        isExportDisabled={!audioBuffer}
-      />
+      <Header />
 
       {/* Main Workspace Layout */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 flex flex-col gap-6">
@@ -338,6 +478,11 @@ export default function App() {
             profileImage={profileImage}
             onAspectRatioChange={handleAspectRatioChange}
             onDropAudioFile={handleFileUpload}
+            onExportClick={() => setIsExportModalOpen(true)}
+            isExportDisabled={!audioBuffer}
+            onImportJson={handleImportJson}
+            onImportError={handleImportError}
+            importStatus={importStatus}
           />
 
           {/* Audio Playback Timeline & Transport Controls */}
@@ -349,6 +494,8 @@ export default function App() {
             volume={volume}
             playbackRate={playbackRate}
             isLooping={isLooping}
+            metadata={metadata}
+            onAudioClick={() => setIsAudioModalOpen(true)}
             onTogglePlay={handleTogglePlay}
             onSeek={handleSeek}
             onVolumeChange={handleVolumeChange}

@@ -6,8 +6,9 @@ import {
   Repeat,
   Volume2,
   VolumeX,
+  FileAudio,
 } from 'lucide-react';
-import { WaveformData } from '../types';
+import { AudioMetadata, WaveformData } from '../types';
 
 interface AudioControlsProps {
   isPlaying: boolean;
@@ -17,6 +18,8 @@ interface AudioControlsProps {
   volume: number;
   playbackRate: number;
   isLooping: boolean;
+  metadata?: AudioMetadata | null;
+  onAudioClick?: () => void;
   trimStart?: number;
   trimEnd?: number;
   onTogglePlay: () => void;
@@ -35,6 +38,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   volume,
   playbackRate,
   isLooping,
+  metadata,
+  onAudioClick,
   onTogglePlay,
   onSeek,
   onVolumeChange,
@@ -123,13 +128,13 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
 
       {/* Main Transport & Playback Control Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        {/* Left: Playback controls */}
-        <div className="flex items-center gap-2">
+        {/* Left: Playback controls & Audio Track Name Button */}
+        <div className="flex items-center gap-2 min-w-0">
           {/* Replay 0s */}
           <button
             id="audio-rewind-btn"
             onClick={() => onSeek(0)}
-            className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer shrink-0"
             title="Restart from beginning"
           >
             <RotateCcw className="w-4 h-4" />
@@ -139,7 +144,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           <button
             id="audio-play-pause-btn"
             onClick={onTogglePlay}
-            className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer ring-1 ring-white/20"
+            className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer ring-1 ring-white/20 shrink-0"
             title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
@@ -149,7 +154,7 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           <button
             id="audio-loop-toggle-btn"
             onClick={onToggleLoop}
-            className={`p-2 rounded-xl transition-all cursor-pointer ${
+            className={`p-2 rounded-xl transition-all cursor-pointer shrink-0 ${
               isLooping
                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                 : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white'
@@ -158,6 +163,20 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           >
             <Repeat className="w-4 h-4" />
           </button>
+
+          {/* Clickable Audio Track Name Button next to controls */}
+          {onAudioClick && (
+            <button
+              type="button"
+              id="controls-audio-track-btn"
+              onClick={onAudioClick}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800/90 hover:bg-neutral-750 border border-neutral-700/70 hover:border-cyan-500/60 text-xs text-neutral-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95 min-w-0 max-w-[175px] sm:max-w-[280px] truncate group ml-0.5"
+              title="Click to choose, upload, or record audio"
+            >
+              <FileAudio className="w-4 h-4 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="truncate font-medium">{metadata ? metadata.fileName : 'Choose Audio Track...'}</span>
+            </button>
+          )}
         </div>
 
         {/* Right: Volume & Playback Rate */}
