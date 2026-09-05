@@ -113,8 +113,17 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
 
     let spectrum: SpectrumData;
 
-    if (isPlaying && audioEngine.getAnalyser()) {
-      // Live dynamic frequency data from Web Audio Analyser with smooth easing
+    if (analyzerRef.current && buffer) {
+      // Deterministic OfflineAudioAnalyzer provides 100% exact mathematical parity between live preview and exported video!
+      spectrum = analyzerRef.current.getSpectrumAtTime(
+        currentTime,
+        settings.barCount || 120,
+        settings.smoothing ?? 0.65,
+        settings.softKneeCompression !== false,
+        (settings.heightScale || 1.0) * (settings.sensitivity || 1.0)
+      );
+    } else if (isPlaying && audioEngine.getAnalyser()) {
+      // Live dynamic frequency data fallback for microphone or streaming audio without an AudioBuffer
       const analyser = audioEngine.getAnalyser()!;
       analyser.smoothingTimeConstant = Math.max(0.1, Math.min(0.95, settings.smoothing ?? 0.65));
 
@@ -182,15 +191,6 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
         highEnergy: targetBands - midCutoff > 0 ? Math.min(1, highSum / (targetBands - midCutoff)) : 0,
         overallRms: 0.5,
       };
-    } else if (analyzerRef.current && buffer) {
-      // Deterministic offline calculation when paused or seeking
-      spectrum = analyzerRef.current.getSpectrumAtTime(
-        currentTime,
-        settings.barCount || 120,
-        settings.smoothing ?? 0.65,
-        settings.softKneeCompression !== false,
-        (settings.heightScale || 1.0) * (settings.sensitivity || 1.0)
-      );
     } else {
       // Empty mock placeholder spectrum if no audio is loaded yet
       const count = settings.barCount || 120;

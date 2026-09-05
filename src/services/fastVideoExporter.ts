@@ -126,6 +126,13 @@ export function audioBufferToWavBlob(
   return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
 
+export function getVp9CodecString(width: number, height: number, fps: number): string {
+  const maxDim = Math.max(width, height);
+  if (maxDim > 1920) return 'vp09.00.51.08';
+  if (maxDim > 1280) return fps > 30 ? 'vp09.00.41.08' : 'vp09.00.40.08';
+  return 'vp09.00.31.08';
+}
+
 export class FastHeadlessVideoExporter {
   private abortController: AbortController | null = null;
 
@@ -134,6 +141,65 @@ export class FastHeadlessVideoExporter {
       this.abortController.abort();
       this.abortController = null;
     }
+  }
+
+  private async findSupportedAlphaConfig(
+    width: number,
+    height: number,
+    fps: number,
+    bitrate: number
+  ): Promise<VideoEncoderConfig | null> {
+    if (typeof window.VideoEncoder === 'undefined' || typeof VideoEncoder.isConfigSupported !== 'function') {
+      return null;
+    }
+
+    const vp9LevelCodec = getVp9CodecString(width, height, fps);
+
+    // Candidates in priority order:
+    // 1. prefer-software: Chromium on mobile Android has libvpx built in, which supports VP9 alpha encoding reliably
+    // 2. no-preference: Browser default
+    // 3. prefer-hardware
+    // 4. VP9 profile 0 level 4.1 & 3.1 fallbacks
+    // 5. VP9 profile 2 fallback
+    const candidates: Array<{ codec: string; hardwareAcceleration: HardwareAcceleration }> = [
+      { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-software' },
+      { codec: vp9LevelCodec, hardwareAcceleration: 'no-preference' },
+      { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-hardware' },
+      { codec: 'vp09.00.41.08', hardwareAcceleration: 'prefer-software' },
+      { codec: 'vp09.00.41.08', hardwareAcceleration: 'no-preference' },
+      { codec: 'vp09.00.31.08', hardwareAcceleration: 'prefer-software' },
+      { codec: 'vp09.02.41.10', hardwareAcceleration: 'prefer-software' },
+      { codec: 'vp9', hardwareAcceleration: 'prefer-software' },
+      { codec: 'vp9', hardwareAcceleration: 'no-preference' },
+    ];
+
+    for (const cand of candidates) {
+      try {
+        const testConfig: VideoEncoderConfig = {
+          codec: cand.codec,
+          width,
+          height,
+          bitrate,
+          framerate: fps,
+          alpha: 'keep',
+          hardwareAcceleration: cand.hardwareAcceleration,
+          latencyMode: 'quality',
+        };
+        const res = await VideoEncoder.isConfigSupported(testConfig);
+        if (res.supported && res.config) {
+          return {
+            ...res.config,
+            alpha: 'keep',
+            width,
+            height,
+            bitrate,
+            framerate: fps,
+            latencyMode: 'quality',
+          };
+        }
+      } catch {}
+    }
+    return null;
   }
 
   public async exportVideo(
@@ -184,27 +250,20 @@ export class FastHeadlessVideoExporter {
 
     const isMp4 = config.format === 'mp4' && !isAlphaExport;
 
-    // 4. If Alpha export is requested in WebM, check if WebCodecs supports alpha: 'keep'
-    let webCodecsSupportsAlpha = false;
+    // 4. If Alpha export is requested in WebM, dynamically detect if WebCodecs supports alpha: 'keep'
+    let supportedAlphaConfig: VideoEncoderConfig | null = null;
     if (isAlphaExport && typeof window.VideoEncoder !== 'undefined' && typeof VideoEncoder.isConfigSupported === 'function') {
-      try {
-        const testRes = await VideoEncoder.isConfigSupported({
-          codec: 'vp09.00.10.08',
-          width,
-          height,
-          bitrate: config.videoBitrate || 8_000_000,
-          framerate: fps,
-          alpha: 'keep',
-        });
-        webCodecsSupportsAlpha = Boolean(testRes.supported);
-      } catch {
-        webCodecsSupportsAlpha = false;
-      }
+      supportedAlphaConfig = await this.findSupportedAlphaConfig(
+        width,
+        height,
+        fps,
+        config.videoBitrate || 8_000_000
+      );
     }
 
-    // If browser WebCodecs doesn't support alpha: 'keep' (e.g. standard Chrome releases),
-    // seamlessly use high-fidelity MediaRecorder canvas capture which natively preserves alpha!
-    if (isAlphaExport && !webCodecsSupportsAlpha) {
+    // Only if browser genuinely does not support WebCodecs alpha (e.g. iOS Safari),
+    // fall back to MediaRecorder canvas capture.
+    if (isAlphaExport && !supportedAlphaConfig) {
       return this.exportViaMediaRecorder(
         audioBuffer,
         waveformData,
@@ -309,23 +368,22 @@ export class FastHeadlessVideoExporter {
     }
 
     if (!isMp4) {
-      videoCodecString = 'vp09.00.10.08';
+      videoCodecString = getVp9CodecString(width, height, fps);
     }
 
-    const videoConfig: VideoEncoderConfig = {
-      codec: videoCodecString,
-      width,
-      height,
-      bitrate: config.videoBitrate || 8_000_000,
-      framerate: fps,
-      latencyMode: 'quality', // Prevents mobile hardware encoders from dropping frames under load
-    };
-
-    if (isAlphaExport && webCodecsSupportsAlpha) {
-      videoConfig.alpha = 'keep';
+    if (isAlphaExport && supportedAlphaConfig) {
+      videoEncoder.configure(supportedAlphaConfig);
+    } else {
+      const videoConfig: VideoEncoderConfig = {
+        codec: videoCodecString,
+        width,
+        height,
+        bitrate: config.videoBitrate || 8_000_000,
+        framerate: fps,
+        latencyMode: 'quality', // Prevents mobile hardware encoders from dropping frames under load
+      };
+      videoEncoder.configure(videoConfig);
     }
-
-    videoEncoder.configure(videoConfig);
 
     // 10. Setup Audio Encoder
     onProgress?.({
@@ -489,6 +547,7 @@ export class FastHeadlessVideoExporter {
       const videoFrame = new VideoFrame(canvas, {
         timestamp: timestampUs,
         duration: frameDurationUs,
+        alpha: isAlphaExport ? 'keep' : 'discard',
       });
 
       // Keyframe every 2 seconds
@@ -496,9 +555,9 @@ export class FastHeadlessVideoExporter {
       videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
       videoFrame.close();
 
-      // Encoder queue pacing: backpressure control (crucial for mobile hardware encoders)
-      while (videoEncoder.encodeQueueSize > 2) {
-        await new Promise((resolve) => setTimeout(resolve, 8));
+      // Encoder queue pacing: backpressure control (crucial for mobile hardware and software encoders)
+      while (videoEncoder.encodeQueueSize > 4) {
+        await new Promise((resolve) => setTimeout(resolve, 4));
       }
 
       // Micro-yield periodically to prevent starving mobile GPU and encoder threads

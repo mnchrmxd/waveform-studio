@@ -228,21 +228,30 @@ export class OfflineAudioAnalyzer {
 
     computeFFTFast(this.realBuf, this.imagBuf);
 
+    // Decibel normalization matching Web Audio AnalyserNode:
+    // minDecibels = -100 dB, maxDecibels = -30 dB, dynamic range = 70 dB
     const invFFTSize2 = (1.0 / fftSize) * 2;
     for (let i = 0; i < this.halfSize; i++) {
       const r = this.realBuf[i];
       const im = this.imagBuf[i];
-      this.rawMagnitudes[i] = Math.sqrt(r * r + im * im) * invFFTSize2;
+      const mag = Math.sqrt(r * r + im * im) * invFFTSize2;
+      const db = 20 * Math.log10(Math.max(1e-5, mag));
+      this.rawMagnitudes[i] = Math.max(0, Math.min(1.0, (db + 100) / 70));
     }
 
+    // Logarithmic / Mel frequency distribution identically calibrated with preview
+    const binCount = this.halfSize;
     for (let b = 0; b < targetBands; b++) {
-      const mapping = this.bandMappings[b];
-      let sum = 0;
-      for (let k = mapping.binStart; k <= mapping.binEnd; k++) {
-        sum += this.rawMagnitudes[k];
-      }
-      const avg = sum / mapping.count;
-      dest[b] = Math.min(1.0, Math.pow(avg * mapping.boost * 4.2, 0.72));
+      const frac = (b + 1) / targetBands;
+      const bin = Math.min(binCount - 1, Math.max(1, Math.floor(Math.pow(frac, 1.85) * (binCount * 0.75))));
+
+      const bPrev = Math.max(0, bin - 1);
+      const bNext = Math.min(binCount - 1, bin + 1);
+      const val = Math.max(this.rawMagnitudes[bin], (this.rawMagnitudes[bPrev] + this.rawMagnitudes[bNext]) * 0.5);
+
+      // Equal-loudness tilt for musical balance (identically matching preview)
+      const freqWeight = 1.0 + Math.sqrt(b / targetBands) * 0.55;
+      dest[b] = val * 1.35 * freqWeight;
     }
 
     return sumSquares;
@@ -270,48 +279,34 @@ export class OfflineAudioAnalyzer {
     }
 
     // 1. Multi-Tap Temporal Lookaround Analysis for Liquid Smooth Ballistics
-    // Sample main window and slight lookbehind window (prevents stiff fluttering)
-    const lookbehindSamples = Math.floor(this.sampleRate * 0.02); // 20ms lookbehind
+    const lookbehindSamples = Math.floor(this.sampleRate * 0.025); // 25ms lookbehind
     const sumSquares = this.computeRawBandsAtSample(startSample, targetBands, this.rawFrequencies);
     this.computeRawBandsAtSample(startSample - lookbehindSamples, targetBands, this.scratchFrequencies);
 
-    // Eased temporal blend: fast attack, smooth buoyant decay
+    // Eased temporal blend matching Web Audio AnalyserNode smoothingTimeConstant
+    const smoothFactor = Math.max(0.1, Math.min(0.95, smoothing ?? 0.65));
     for (let b = 0; b < targetBands; b++) {
       const current = this.rawFrequencies[b];
       const prev = this.scratchFrequencies[b];
-      // Fast attack when rising, smooth spring release when falling
+      // Fast attack when rising, smooth buoyant decay when falling
       const temporalEased = current >= prev
-        ? prev + (current - prev) * 0.82
-        : prev * 0.45 + current * 0.55;
+        ? prev + (current - prev) * (1 - smoothFactor * 0.25)
+        : prev * smoothFactor + current * (1 - smoothFactor);
       this.scratchFrequencies[b] = temporalEased;
     }
 
-    // 2. Spatial Gaussian Neighborhood Smoothing Filter across Frequency Bins
-    // Smoothing parameter (0 = crisp/raw to 1 = silky liquid curves)
-    const smoothWeight = Math.max(0, Math.min(1, smoothing));
-    if (smoothWeight > 0.05) {
-      // 5-Tap Gaussian Kernel: [w2, w1, w0, w1, w2]
-      const w0 = 0.42 * (1 - smoothWeight * 0.3);
-      const w1 = 0.23 * smoothWeight + 0.05;
-      const w2 = 0.06 * smoothWeight;
-      const norm = w0 + 2 * w1 + 2 * w2;
-
-      for (let b = 0; b < targetBands; b++) {
-        const v_m2 = b >= 2 ? this.scratchFrequencies[b - 2] : this.scratchFrequencies[0];
-        const v_m1 = b >= 1 ? this.scratchFrequencies[b - 1] : this.scratchFrequencies[0];
-        const v_0 = this.scratchFrequencies[b];
-        const v_p1 = b < targetBands - 1 ? this.scratchFrequencies[b + 1] : this.scratchFrequencies[targetBands - 1];
-        const v_p2 = b < targetBands - 2 ? this.scratchFrequencies[b + 2] : this.scratchFrequencies[targetBands - 1];
-
-        const smoothed = (v_m2 * w2 + v_m1 * w1 + v_0 * w0 + v_p1 * w1 + v_p2 * w2) / norm;
-        this.outFrequencies[b] = smoothed;
-      }
-    } else {
-      this.outFrequencies.set(this.scratchFrequencies);
+    // 2. Spatial Gaussian 5-tap kernel smoothing across Frequency Bins
+    for (let b = 0; b < targetBands; b++) {
+      const v0 = this.scratchFrequencies[Math.max(0, b - 2)];
+      const v1 = this.scratchFrequencies[Math.max(0, b - 1)];
+      const v2 = this.scratchFrequencies[b];
+      const v3 = this.scratchFrequencies[Math.min(targetBands - 1, b + 1)];
+      const v4 = this.scratchFrequencies[Math.min(targetBands - 1, b + 2)];
+      this.outFrequencies[b] = v0 * 0.06 + v1 * 0.24 + v2 * 0.40 + v3 * 0.24 + v4 * 0.06;
     }
 
-    // 3. Dynamic Sensitivity & Analog Soft-Knee Saturation (Smooth natural curves without hard plateau caps)
-    const sens = Math.max(0.1, sensitivity || 1.0);
+    // 3. Dynamic Sensitivity & Analog Soft-Knee Saturation
+    const sens = Math.max(0.05, sensitivity || 1.0);
     for (let b = 0; b < targetBands; b++) {
       let val = this.outFrequencies[b] * sens;
 
