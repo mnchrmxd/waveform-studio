@@ -261,25 +261,30 @@ export class FastHeadlessVideoExporter {
       );
     }
 
-    // Only if browser genuinely does not support WebCodecs alpha (e.g. iOS Safari),
-    // fall back to MediaRecorder canvas capture.
+    // If browser does not support WebCodecs alpha (e.g. mobile Safari / Chrome Android),
+    // use Server-Side Headless rendering (FFmpeg libvpx-vp9 -pix_fmt yuva420p) for true 60fps/30fps offline encoding!
     if (isAlphaExport && !supportedAlphaConfig) {
-      return this.exportViaMediaRecorder(
-        audioBuffer,
-        waveformData,
-        config,
-        width,
-        height,
-        fps,
-        trimStart,
-        trimEnd,
-        duration,
-        onProgress
-      );
+      try {
+        return await this.exportViaServerHeadless(
+          audioBuffer,
+          waveformData,
+          config,
+          width,
+          height,
+          fps,
+          trimStart,
+          trimEnd,
+          duration,
+          onProgress
+        );
+      } catch (err: any) {
+        console.warn('Server headless alpha render failed, falling back to PNG sequence (.zip):', err);
+        return this.exportPngSequence(audioBuffer, waveformData, config, onProgress);
+      }
     }
 
     // 5. Prepare Offline Fast FFT Analyzer
-    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
+    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 2048);
 
     // 6. Create Offscreen or Virtual Canvas
     let canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -663,6 +668,162 @@ export class FastHeadlessVideoExporter {
   }
 
   /**
+   * Transparent WebM export via Headless Server rendering (FFmpeg libvpx-vp9 -pix_fmt yuva420p)
+   * Deterministic offline frame-by-frame encoding with genuine alpha channel, zero dropped frames, and true 60fps/30fps
+   */
+  private async exportViaServerHeadless(
+    audioBuffer: AudioBuffer,
+    waveformData: WaveformData | null,
+    config: ExportConfig,
+    width: number,
+    height: number,
+    fps: number,
+    trimStart: number,
+    trimEnd: number,
+    duration: number,
+    onProgress?: (progress: ExportProgress) => void
+  ): Promise<ExportResult> {
+    const startTime = performance.now();
+    const cleanTitle = (config.settings.trackTitle || 'visualizer')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .toLowerCase();
+    const fileName = `${cleanTitle}_alpha_${config.resolution}_${fps}fps.webm`;
+    const totalFrames = Math.max(1, Math.floor(duration * fps));
+
+    onProgress?.({
+      currentFrame: 0,
+      totalFrames,
+      percentage: 2,
+      fps,
+      speedMultiplier: 1.0,
+      elapsedSeconds: 0,
+      estimatedRemainingSeconds: duration,
+      status: 'initializing',
+    });
+
+    // 1. Convert trimmed AudioBuffer to high-fidelity WAV blob
+    const wavBlob = audioBufferToWavBlob(audioBuffer, trimStart, trimEnd);
+    const wavDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(wavBlob);
+    });
+
+    // 2. Prepare Profile Image if available
+    let profileDataUrl: string | undefined;
+    if (config.profileImage && config.profileImage instanceof HTMLImageElement) {
+      profileDataUrl = config.profileImage.src;
+    }
+
+    // 3. Register Unique Job ID & Connect SSE for Real-Time Server Progress
+    const jobId = `export_alpha_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    let sse: EventSource | null = null;
+    try {
+      sse = new EventSource(`/api/render-progress/${jobId}`);
+      sse.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && typeof data.progress === 'number') {
+            const pct = Math.max(0, Math.min(99, data.progress));
+            const currentFrame = data.currentFrame || Math.round((pct / 100) * totalFrames);
+            const elapsed = (performance.now() - startTime) / 1000;
+            const remaining = pct > 0 ? (elapsed / (pct / 100)) - elapsed : duration;
+
+            onProgress?.({
+              currentFrame,
+              totalFrames,
+              percentage: pct,
+              fps: data.fps || fps,
+              speedMultiplier: 1.0,
+              elapsedSeconds: Number(elapsed.toFixed(1)),
+              estimatedRemainingSeconds: Number(Math.max(0, remaining).toFixed(1)),
+              status: 'rendering-video',
+            });
+          }
+        } catch {}
+      };
+    } catch {
+      // SSE optional
+    }
+
+    onProgress?.({
+      currentFrame: 0,
+      totalFrames,
+      percentage: 5,
+      fps,
+      speedMultiplier: 1.0,
+      elapsedSeconds: 0,
+      estimatedRemainingSeconds: duration,
+      status: 'rendering-video',
+    });
+
+    // 4. POST to /api/render-headless with full options
+    const payload = {
+      video: {
+        width,
+        height,
+        fps,
+        format: 'webm',
+        duration,
+      },
+      settings: {
+        ...config.settings,
+        backgroundType: 'transparent',
+      },
+      theme: config.theme,
+      audio: wavDataUrl,
+      profileImage: profileDataUrl,
+    };
+
+    const response = await fetch(`/api/render-headless?jobId=${jobId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-job-id': jobId,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (sse) {
+      sse.close();
+    }
+
+    if (!response.ok) {
+      throw new Error(`Server headless render failed: ${response.statusText} (${response.status})`);
+    }
+
+    const videoBlob = await response.blob();
+    const videoUrl = URL.createObjectURL(videoBlob);
+    const totalTimeMs = performance.now() - startTime;
+
+    onProgress?.({
+      currentFrame: totalFrames,
+      totalFrames,
+      percentage: 100,
+      fps,
+      speedMultiplier: 1.0,
+      elapsedSeconds: Number((totalTimeMs / 1000).toFixed(1)),
+      estimatedRemainingSeconds: 0,
+      status: 'completed',
+    });
+
+    return {
+      blob: videoBlob,
+      url: videoUrl,
+      fileName,
+      fileSize: videoBlob.size,
+      duration,
+      width,
+      height,
+      totalFrames,
+      renderTimeSec: totalTimeMs / 1000,
+      averageFps: totalFrames / (totalTimeMs / 1000),
+      speedRatio: duration / (totalTimeMs / 1000),
+    };
+  }
+
+  /**
    * Transparent WebM export via MediaRecorder canvas capture
    * Provides 100% genuine alpha preservation across Chrome, Edge, and Firefox
    */
@@ -734,7 +895,7 @@ export class FastHeadlessVideoExporter {
       }
     };
 
-    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
+    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 2048);
     const barCount = config.settings.barCount || 100;
     const totalFrames = Math.max(1, Math.ceil(duration * fps));
     const isAlphaExport = Boolean(config.exportAlpha || config.settings.backgroundType === 'transparent');
@@ -907,7 +1068,7 @@ export class FastHeadlessVideoExporter {
       status: 'initializing',
     });
 
-    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
+    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 2048);
     const barCount = config.settings.barCount || 100;
     const isAlphaExport = Boolean(config.exportAlpha || config.settings.backgroundType === 'transparent');
 

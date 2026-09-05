@@ -120,10 +120,10 @@ function getHannWindow(size: number): Float32Array {
 }
 
 interface BandMapping {
-  binStart: number;
-  binEnd: number;
-  count: number;
-  boost: number;
+  kStart: number;
+  kEnd: number;
+  kCenter: number;
+  weight: number;
 }
 
 export class OfflineAudioAnalyzer {
@@ -140,11 +140,14 @@ export class OfflineAudioAnalyzer {
   private rawFrequencies: Float32Array;
   private outFrequencies: Float32Array;
   private scratchFrequencies: Float32Array;
+  private smoothedFrequencies: Float32Array;
   private outWaveform: Float32Array;
   private bandMappings: BandMapping[] = [];
   private lastTargetBands: number = 0;
+  private lastAnalysisTime: number = -1;
+  private smoothedBassEnergy: number = 0;
 
-  constructor(buffer: AudioBuffer, fftSize: number = 1024) {
+  constructor(buffer: AudioBuffer, fftSize: number = 2048) {
     this.sampleRate = buffer.sampleRate;
     this.fftSize = fftSize;
     this.halfSize = fftSize / 2;
@@ -156,6 +159,7 @@ export class OfflineAudioAnalyzer {
     this.rawFrequencies = new Float32Array(128);
     this.outFrequencies = new Float32Array(128);
     this.scratchFrequencies = new Float32Array(128);
+    this.smoothedFrequencies = new Float32Array(128);
     this.outWaveform = new Float32Array(128);
 
     // Merge multi-channel audio to mono once
@@ -182,33 +186,40 @@ export class OfflineAudioAnalyzer {
     this.rawFrequencies = new Float32Array(targetBands);
     this.outFrequencies = new Float32Array(targetBands);
     this.scratchFrequencies = new Float32Array(targetBands);
+    this.smoothedFrequencies = new Float32Array(targetBands);
     this.outWaveform = new Float32Array(targetBands);
     this.bandMappings = new Array(targetBands);
+    this.lastAnalysisTime = -1;
+    this.smoothedBassEnergy = 0;
 
-    const minFreq = 20; // 20 Hz
-    const maxFreq = Math.min(20000, this.sampleRate / 2);
-    const minMel = Math.log10(minFreq);
-    const maxMel = Math.log10(maxFreq);
+    // Musical frequency distribution from 28 Hz to 16,000 Hz
+    const minFreq = 28;
+    const maxFreq = Math.min(16000, this.sampleRate * 0.48);
+    const logMin = Math.log10(minFreq);
+    const logMax = Math.log10(maxFreq);
+    const binConst = this.fftSize / this.sampleRate;
 
     for (let b = 0; b < targetBands; b++) {
-      const fStart = Math.pow(10, minMel + (b / targetBands) * (maxMel - minMel));
-      const fEnd = Math.pow(10, minMel + ((b + 1) / targetBands) * (maxMel - minMel));
+      const frac0 = Math.max(0, (b - 0.5) / (targetBands - 1));
+      const frac1 = Math.min(1, (b + 0.5) / (targetBands - 1));
+      const fracC = b / (targetBands - 1);
 
-      const binStart = Math.max(0, Math.floor((fStart / (this.sampleRate / 2)) * this.halfSize));
-      const binEnd = Math.min(
-        this.halfSize - 1,
-        Math.max(binStart + 1, Math.ceil((fEnd / (this.sampleRate / 2)) * this.halfSize))
-      );
+      const f0 = Math.pow(10, logMin + frac0 * (logMax - logMin));
+      const f1 = Math.pow(10, logMin + frac1 * (logMax - logMin));
+      const fC = Math.pow(10, logMin + fracC * (logMax - logMin));
 
-      const freqHz = (fStart + fEnd) / 2;
-      // Perceptual ISO loudness balance curve
-      const boost = Math.min(3.6, Math.max(1.0, Math.pow(freqHz / 1000, 0.22) * 1.55));
+      const kStart = Math.max(1, f0 * binConst);
+      const kEnd = Math.min(this.halfSize - 1, Math.max(kStart + 0.1, f1 * binConst));
+      const kCenter = Math.min(this.halfSize - 1, Math.max(1, fC * binConst));
+
+      // Musical equal-loudness weighting (slight boost to high mids and treble, natural bass presence)
+      const freqWeight = 1.0 + Math.sqrt(b / targetBands) * 0.45;
 
       this.bandMappings[b] = {
-        binStart,
-        binEnd,
-        count: Math.max(1, binEnd - binStart + 1),
-        boost,
+        kStart,
+        kEnd,
+        kCenter,
+        weight: freqWeight,
       };
     }
   }
@@ -229,29 +240,55 @@ export class OfflineAudioAnalyzer {
     computeFFTFast(this.realBuf, this.imagBuf);
 
     // Decibel normalization matching Web Audio AnalyserNode:
-    // minDecibels = -100 dB, maxDecibels = -30 dB, dynamic range = 70 dB
+    // minDecibels = -95 dB, maxDecibels = -25 dB, dynamic range = 70 dB
     const invFFTSize2 = (1.0 / fftSize) * 2;
     for (let i = 0; i < this.halfSize; i++) {
       const r = this.realBuf[i];
       const im = this.imagBuf[i];
       const mag = Math.sqrt(r * r + im * im) * invFFTSize2;
       const db = 20 * Math.log10(Math.max(1e-5, mag));
-      this.rawMagnitudes[i] = Math.max(0, Math.min(1.0, (db + 100) / 70));
+      this.rawMagnitudes[i] = Math.max(0, Math.min(1.0, (db + 95) / 70));
     }
 
-    // Logarithmic / Mel frequency distribution identically calibrated with preview
-    const binCount = this.halfSize;
+    // Continuous band integration & sub-bin interpolation (prevents low-frequency bin clumping and beating)
     for (let b = 0; b < targetBands; b++) {
-      const frac = (b + 1) / targetBands;
-      const bin = Math.min(binCount - 1, Math.max(1, Math.floor(Math.pow(frac, 1.85) * (binCount * 0.75))));
+      const mapping = this.bandMappings[b];
+      const k0 = mapping.kStart;
+      const k1 = mapping.kEnd;
+      const span = k1 - k0;
 
-      const bPrev = Math.max(0, bin - 1);
-      const bNext = Math.min(binCount - 1, bin + 1);
-      const val = Math.max(this.rawMagnitudes[bin], (this.rawMagnitudes[bPrev] + this.rawMagnitudes[bNext]) * 0.5);
+      let val = 0;
+      if (span >= 1.0) {
+        // Average energy over the bin range with fractional edge weights
+        const i0 = Math.floor(k0);
+        const i1 = Math.ceil(k1);
+        let weightedSum = 0;
+        let totalWeight = 0;
 
-      // Equal-loudness tilt for musical balance (identically matching preview)
-      const freqWeight = 1.0 + Math.sqrt(b / targetBands) * 0.55;
-      dest[b] = val * 1.35 * freqWeight;
+        for (let i = i0; i <= i1 && i < this.halfSize; i++) {
+          const left = Math.max(k0, i);
+          const right = Math.min(k1, i + 1);
+          const w = Math.max(0, right - left);
+          weightedSum += this.rawMagnitudes[i] * w;
+          totalWeight += w;
+        }
+
+        val = totalWeight > 0
+          ? weightedSum / totalWeight
+          : this.rawMagnitudes[Math.min(this.halfSize - 1, Math.round(mapping.kCenter))];
+      } else {
+        // Sub-bin range: Smooth continuous interpolation between adjacent bins
+        const kC = mapping.kCenter;
+        const iC = Math.floor(kC);
+        const frac = kC - iC;
+        const m0 = this.rawMagnitudes[Math.min(this.halfSize - 1, iC)];
+        const m1 = this.rawMagnitudes[Math.min(this.halfSize - 1, iC + 1)];
+        // Smoothstep curve for seamless transitions
+        const smoothFrac = frac * frac * (3 - 2 * frac);
+        val = m0 + (m1 - m0) * smoothFrac;
+      }
+
+      dest[b] = val * 1.35 * mapping.weight;
     }
 
     return sumSquares;
@@ -278,39 +315,60 @@ export class OfflineAudioAnalyzer {
       this.outWaveform[i] = sampleIdx >= 0 && sampleIdx < audioLen ? this.channelData[sampleIdx] : 0;
     }
 
-    // 1. Multi-Tap Temporal Lookaround Analysis for Liquid Smooth Ballistics
-    const lookbehindSamples = Math.floor(this.sampleRate * 0.025); // 25ms lookbehind
+    // Compute instantaneous raw FFT
     const sumSquares = this.computeRawBandsAtSample(startSample, targetBands, this.rawFrequencies);
-    this.computeRawBandsAtSample(startSample - lookbehindSamples, targetBands, this.scratchFrequencies);
 
-    // Eased temporal blend matching Web Audio AnalyserNode smoothingTimeConstant
-    const smoothFactor = Math.max(0.1, Math.min(0.95, smoothing ?? 0.65));
-    for (let b = 0; b < targetBands; b++) {
-      const current = this.rawFrequencies[b];
-      const prev = this.scratchFrequencies[b];
-      // Fast attack when rising, smooth buoyant decay when falling
-      const temporalEased = current >= prev
-        ? prev + (current - prev) * (1 - smoothFactor * 0.25)
-        : prev * smoothFactor + current * (1 - smoothFactor);
-      this.scratchFrequencies[b] = temporalEased;
+    // Continuous Temporal Ballistic Smoothing (Attack / Release)
+    const smoothParam = Math.max(0.1, Math.min(0.95, smoothing ?? 0.65));
+    const isDiscontinuous =
+      this.lastAnalysisTime < 0 ||
+      Math.abs(timeSeconds - this.lastAnalysisTime) > 0.3 ||
+      timeSeconds < this.lastAnalysisTime;
+
+    if (isDiscontinuous) {
+      // Direct state initialization on initial load or user seek
+      for (let b = 0; b < targetBands; b++) {
+        this.smoothedFrequencies[b] = this.rawFrequencies[b];
+      }
+      this.lastAnalysisTime = timeSeconds;
+    } else {
+      const dt = Math.max(0.001, Math.min(0.1, timeSeconds - this.lastAnalysisTime));
+      this.lastAnalysisTime = timeSeconds;
+
+      // Fast attack for punchy transient impact, liquid buoyant release decay
+      const tauAttack = 0.022; // ~22ms attack
+      const tauDecay = 0.12 + smoothParam * 0.22; // 140ms - 340ms decay
+
+      const attackWeight = 1 - Math.exp(-dt / tauAttack);
+      const decayWeight = 1 - Math.exp(-dt / tauDecay);
+
+      for (let b = 0; b < targetBands; b++) {
+        const raw = this.rawFrequencies[b];
+        const prev = this.smoothedFrequencies[b];
+        if (raw > prev) {
+          this.smoothedFrequencies[b] = prev + (raw - prev) * attackWeight;
+        } else {
+          this.smoothedFrequencies[b] = prev + (raw - prev) * decayWeight;
+        }
+      }
     }
 
-    // 2. Spatial Gaussian 5-tap kernel smoothing across Frequency Bins
+    // Spatial Gaussian 5-tap kernel smoothing across Frequency Bins to eliminate single-bin spikes
     for (let b = 0; b < targetBands; b++) {
-      const v0 = this.scratchFrequencies[Math.max(0, b - 2)];
-      const v1 = this.scratchFrequencies[Math.max(0, b - 1)];
-      const v2 = this.scratchFrequencies[b];
-      const v3 = this.scratchFrequencies[Math.min(targetBands - 1, b + 1)];
-      const v4 = this.scratchFrequencies[Math.min(targetBands - 1, b + 2)];
-      this.outFrequencies[b] = v0 * 0.06 + v1 * 0.24 + v2 * 0.40 + v3 * 0.24 + v4 * 0.06;
+      const v0 = this.smoothedFrequencies[Math.max(0, b - 2)];
+      const v1 = this.smoothedFrequencies[Math.max(0, b - 1)];
+      const v2 = this.smoothedFrequencies[b];
+      const v3 = this.smoothedFrequencies[Math.min(targetBands - 1, b + 1)];
+      const v4 = this.smoothedFrequencies[Math.min(targetBands - 1, b + 2)];
+      this.scratchFrequencies[b] = v0 * 0.06 + v1 * 0.24 + v2 * 0.40 + v3 * 0.24 + v4 * 0.06;
     }
 
-    // 3. Dynamic Sensitivity & Analog Soft-Knee Saturation
+    // Dynamic Sensitivity & Analog Soft-Knee Saturation
     const sens = Math.max(0.05, sensitivity || 1.0);
     for (let b = 0; b < targetBands; b++) {
-      let val = this.outFrequencies[b] * sens;
+      let val = this.scratchFrequencies[b] * sens;
 
-      // Soft-saturation curve: compresses peaks smoothly with hyperbolic tangent, avoiding flat ceiling truncations
+      // Soft-saturation curve: compresses peaks smoothly with hyperbolic tangent, avoiding hard flat clips
       if (softKnee) {
         val = Math.tanh(val * 0.92) * 1.12;
       }
@@ -318,13 +376,19 @@ export class OfflineAudioAnalyzer {
       this.outFrequencies[b] = Math.max(0.01, Math.min(1.0, val));
     }
 
-    // Audio-reactive band energies
-    const bassBands = Math.floor(targetBands * 0.16);
+    // Audio-reactive band energies with ballistic dampening (eliminates jitter and beating)
+    const bassBands = Math.floor(targetBands * 0.15);
     const midBands = Math.floor(targetBands * 0.6);
 
     let bassSum = 0;
     for (let i = 0; i < bassBands; i++) bassSum += this.outFrequencies[i];
-    const bassEnergy = bassBands > 0 ? Math.min(1, (bassSum / bassBands) * 1.5) : 0;
+    const rawBassEnergy = bassBands > 0 ? Math.min(1, (bassSum / bassBands) * 1.4) : 0;
+
+    if (isDiscontinuous) {
+      this.smoothedBassEnergy = rawBassEnergy;
+    } else {
+      this.smoothedBassEnergy += (rawBassEnergy - this.smoothedBassEnergy) * 0.25;
+    }
 
     let midSum = 0;
     for (let i = bassBands; i < midBands; i++) midSum += this.outFrequencies[i];
@@ -339,7 +403,7 @@ export class OfflineAudioAnalyzer {
     return {
       frequencies: this.outFrequencies,
       waveform: this.outWaveform,
-      bassEnergy,
+      bassEnergy: this.smoothedBassEnergy,
       midEnergy,
       highEnergy,
       overallRms,

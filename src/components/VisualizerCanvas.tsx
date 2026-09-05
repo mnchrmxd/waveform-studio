@@ -70,7 +70,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
 
   useEffect(() => {
     if (buffer) {
-      analyzerRef.current = new OfflineAudioAnalyzer(buffer, 1024);
+      analyzerRef.current = new OfflineAudioAnalyzer(buffer, 2048);
     } else {
       analyzerRef.current = null;
     }
@@ -115,8 +115,9 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
 
     if (analyzerRef.current && buffer) {
       // Deterministic OfflineAudioAnalyzer provides 100% exact mathematical parity between live preview and exported video!
+      const activeTime = isPlaying ? audioEngine.getCurrentTime() : currentTime;
       spectrum = analyzerRef.current.getSpectrumAtTime(
-        currentTime,
+        activeTime,
         settings.barCount || 120,
         settings.smoothing ?? 0.65,
         settings.softKneeCompression !== false,

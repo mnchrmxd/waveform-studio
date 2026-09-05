@@ -302,17 +302,7 @@ export function renderVisualizerFrame(opts: RenderFrameOptions): void {
   ctx.save();
   ctx.clearRect(0, 0, width, height);
 
-  // 1. Audio-reactive subtle bass scale
-  const bassPulse = spectrum.bassEnergy * 0.03;
-  if (bassPulse > 0.005) {
-    const cx = width / 2;
-    const cy = height / 2;
-    ctx.translate(cx, cy);
-    ctx.scale(1 + bassPulse, 1 + bassPulse);
-    ctx.translate(-cx, -cy);
-  }
-
-  // 2. Render Background (Skipped for transparent alpha stages/exports)
+  // 1. Render Background (Skipped for transparent alpha stages/exports)
   if (settings.backgroundType !== 'transparent') {
     if (backgroundVideo && (backgroundVideo.readyState >= 2 || (backgroundVideo.videoWidth > 0 && backgroundVideo.videoHeight > 0))) {
       ctx.save();
@@ -1556,8 +1546,8 @@ function renderRadial(
     ctx.shadowColor = primaryCol;
   }
 
-  // Inner pulsing circle
-  const corePulse = innerRadius * (1 + spectrum.bassEnergy * 0.12);
+  // Inner core circle (calm and stable; subtle reactive pulse only if profileAudioReactiveScale is explicitly enabled)
+  const corePulse = innerRadius * (1 + (settings.profileAudioReactiveScale ? (spectrum.bassEnergy || 0) * 0.04 : 0));
   ctx.beginPath();
   ctx.arc(0, 0, corePulse * 0.85, 0, Math.PI * 2);
   const coreGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, corePulse);

@@ -282,7 +282,7 @@ export async function renderHeadlessVideo(
       duration: audioDuration,
       getChannelData: (_ch: number) => floatSamples,
     };
-    const analyzer = new OfflineAudioAnalyzer(dummyAudioBuffer as any, 1024);
+    const analyzer = new OfflineAudioAnalyzer(dummyAudioBuffer as any, 2048);
 
     // 7. Spawn FFmpeg Video Encoder Process
     const outputFilename = `visualizer_${Date.now()}.${format}`;
