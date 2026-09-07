@@ -143,63 +143,151 @@ export class FastHeadlessVideoExporter {
     }
   }
 
-  private async findSupportedAlphaConfig(
+  private async findOptimalVideoConfig(
     width: number,
     height: number,
     fps: number,
-    bitrate: number
+    bitrate: number,
+    isMp4: boolean,
+    isAlpha: boolean
   ): Promise<VideoEncoderConfig | null> {
     if (typeof window.VideoEncoder === 'undefined' || typeof VideoEncoder.isConfigSupported !== 'function') {
       return null;
     }
 
-    const vp9LevelCodec = getVp9CodecString(width, height, fps);
+    if (isAlpha) {
+      const vp9LevelCodec = getVp9CodecString(width, height, fps);
+      const candidates: Array<{ codec: string; hardwareAcceleration: HardwareAcceleration; latencyMode: LatencyMode }> = [
+        { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-hardware', latencyMode: 'realtime' },
+        { codec: vp9LevelCodec, hardwareAcceleration: 'no-preference', latencyMode: 'realtime' },
+        { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-software', latencyMode: 'realtime' },
+        { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-software', latencyMode: 'quality' },
+        { codec: 'vp09.00.41.08', hardwareAcceleration: 'prefer-hardware', latencyMode: 'realtime' },
+        { codec: 'vp09.00.41.08', hardwareAcceleration: 'prefer-software', latencyMode: 'realtime' },
+        { codec: 'vp09.00.31.08', hardwareAcceleration: 'prefer-software', latencyMode: 'realtime' },
+        { codec: 'vp9', hardwareAcceleration: 'prefer-software', latencyMode: 'realtime' },
+      ];
 
-    // Candidates in priority order:
-    // 1. prefer-software: Chromium on mobile Android has libvpx built in, which supports VP9 alpha encoding reliably
-    // 2. no-preference: Browser default
-    // 3. prefer-hardware
-    // 4. VP9 profile 0 level 4.1 & 3.1 fallbacks
-    // 5. VP9 profile 2 fallback
-    const candidates: Array<{ codec: string; hardwareAcceleration: HardwareAcceleration }> = [
-      { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-software' },
-      { codec: vp9LevelCodec, hardwareAcceleration: 'no-preference' },
-      { codec: vp9LevelCodec, hardwareAcceleration: 'prefer-hardware' },
-      { codec: 'vp09.00.41.08', hardwareAcceleration: 'prefer-software' },
-      { codec: 'vp09.00.41.08', hardwareAcceleration: 'no-preference' },
-      { codec: 'vp09.00.31.08', hardwareAcceleration: 'prefer-software' },
-      { codec: 'vp09.02.41.10', hardwareAcceleration: 'prefer-software' },
-      { codec: 'vp9', hardwareAcceleration: 'prefer-software' },
-      { codec: 'vp9', hardwareAcceleration: 'no-preference' },
-    ];
-
-    for (const cand of candidates) {
-      try {
-        const testConfig: VideoEncoderConfig = {
-          codec: cand.codec,
-          width,
-          height,
-          bitrate,
-          framerate: fps,
-          alpha: 'keep',
-          hardwareAcceleration: cand.hardwareAcceleration,
-          latencyMode: 'quality',
-        };
-        const res = await VideoEncoder.isConfigSupported(testConfig);
-        if (res.supported && res.config) {
-          return {
-            ...res.config,
-            alpha: 'keep',
+      for (const cand of candidates) {
+        try {
+          const testConfig: VideoEncoderConfig = {
+            codec: cand.codec,
             width,
             height,
             bitrate,
             framerate: fps,
-            latencyMode: 'quality',
+            alpha: 'keep',
+            hardwareAcceleration: cand.hardwareAcceleration,
+            latencyMode: cand.latencyMode,
           };
-        }
-      } catch {}
+          const res = await VideoEncoder.isConfigSupported(testConfig);
+          if (res.supported && res.config) {
+            return {
+              ...res.config,
+              alpha: 'keep',
+              width,
+              height,
+              bitrate,
+              framerate: fps,
+              latencyMode: cand.latencyMode,
+            };
+          }
+        } catch {}
+      }
+      return null;
     }
-    return null;
+
+    if (isMp4) {
+      // H.264 profiles: High, Main, Baseline
+      const h264Candidates: string[] = [];
+      if (width > 1920 || height > 1920) {
+        h264Candidates.push('avc1.640033', 'avc1.4d0033', 'avc1.420033');
+      } else if (width <= 1280 && height <= 1280) {
+        h264Candidates.push('avc1.4d001f', 'avc1.42001f', 'avc1.64001f');
+      } else {
+        h264Candidates.push('avc1.4d002a', 'avc1.64002a', 'avc1.42002a');
+      }
+
+      const accelModes: HardwareAcceleration[] = ['prefer-hardware', 'no-preference', 'prefer-software'];
+      const latencyModes: LatencyMode[] = ['realtime', 'quality'];
+
+      for (const accel of accelModes) {
+        for (const lat of latencyModes) {
+          for (const codec of h264Candidates) {
+            try {
+              const testConfig: VideoEncoderConfig = {
+                codec,
+                width,
+                height,
+                bitrate,
+                framerate: fps,
+                hardwareAcceleration: accel,
+                latencyMode: lat,
+              };
+              const res = await VideoEncoder.isConfigSupported(testConfig);
+              if (res.supported && res.config) {
+                return {
+                  ...res.config,
+                  width,
+                  height,
+                  bitrate,
+                  framerate: fps,
+                  hardwareAcceleration: accel,
+                  latencyMode: lat,
+                };
+              }
+            } catch {}
+          }
+        }
+      }
+
+      return {
+        codec: h264Candidates[0],
+        width,
+        height,
+        bitrate,
+        framerate: fps,
+        hardwareAcceleration: 'prefer-hardware',
+      };
+    } else {
+      // Standard VP9 WebM
+      const vp9Codec = getVp9CodecString(width, height, fps);
+      const accelModes: HardwareAcceleration[] = ['prefer-hardware', 'no-preference', 'prefer-software'];
+      for (const accel of accelModes) {
+        try {
+          const testConfig: VideoEncoderConfig = {
+            codec: vp9Codec,
+            width,
+            height,
+            bitrate,
+            framerate: fps,
+            hardwareAcceleration: accel,
+            latencyMode: 'realtime',
+          };
+          const res = await VideoEncoder.isConfigSupported(testConfig);
+          if (res.supported && res.config) {
+            return {
+              ...res.config,
+              width,
+              height,
+              bitrate,
+              framerate: fps,
+              hardwareAcceleration: accel,
+              latencyMode: 'realtime',
+            };
+          }
+        } catch {}
+      }
+
+      return {
+        codec: vp9Codec,
+        width,
+        height,
+        bitrate,
+        framerate: fps,
+        hardwareAcceleration: 'prefer-hardware',
+      };
+    }
   }
 
   public async exportVideo(
@@ -253,11 +341,13 @@ export class FastHeadlessVideoExporter {
     // 4. If Alpha export is requested in WebM, dynamically detect if WebCodecs supports alpha: 'keep'
     let supportedAlphaConfig: VideoEncoderConfig | null = null;
     if (isAlphaExport && typeof window.VideoEncoder !== 'undefined' && typeof VideoEncoder.isConfigSupported === 'function') {
-      supportedAlphaConfig = await this.findSupportedAlphaConfig(
+      supportedAlphaConfig = await this.findOptimalVideoConfig(
         width,
         height,
         fps,
-        config.videoBitrate || 8_000_000
+        config.videoBitrate || 8_000_000,
+        false,
+        true
       );
     }
 
@@ -283,8 +373,8 @@ export class FastHeadlessVideoExporter {
       }
     }
 
-    // 5. Prepare Offline Fast FFT Analyzer
-    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 2048);
+    // 5. Prepare Offline Fast FFT Analyzer (1024 points for fast 43Hz binning & continuous sub-bin interpolation)
+    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
 
     // 6. Create Offscreen or Virtual Canvas
     let canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -365,29 +455,40 @@ export class FastHeadlessVideoExporter {
 
     videoEncoder = new VideoEncoder(videoInit);
 
-    let videoCodecString = 'avc1.4d002a';
-    if (width > 1920 || height > 1920) {
-      videoCodecString = 'avc1.640033';
-    } else if (width <= 1280 && height <= 1280) {
-      videoCodecString = 'avc1.4d001f';
+    let activeVideoConfig: VideoEncoderConfig | null = supportedAlphaConfig;
+
+    if (!activeVideoConfig) {
+      activeVideoConfig = await this.findOptimalVideoConfig(
+        width,
+        height,
+        fps,
+        config.videoBitrate || 8_000_000,
+        isMp4,
+        isAlphaExport
+      );
     }
 
-    if (!isMp4) {
-      videoCodecString = getVp9CodecString(width, height, fps);
-    }
-
-    if (isAlphaExport && supportedAlphaConfig) {
-      videoEncoder.configure(supportedAlphaConfig);
+    if (activeVideoConfig) {
+      videoEncoder.configure(activeVideoConfig);
     } else {
-      const videoConfig: VideoEncoderConfig = {
-        codec: videoCodecString,
+      let fallbackCodec = 'avc1.4d002a';
+      if (width > 1920 || height > 1920) {
+        fallbackCodec = 'avc1.640033';
+      } else if (width <= 1280 && height <= 1280) {
+        fallbackCodec = 'avc1.4d001f';
+      }
+      if (!isMp4) {
+        fallbackCodec = getVp9CodecString(width, height, fps);
+      }
+
+      videoEncoder.configure({
+        codec: fallbackCodec,
         width,
         height,
         bitrate: config.videoBitrate || 8_000_000,
         framerate: fps,
-        latencyMode: 'quality', // Prevents mobile hardware encoders from dropping frames under load
-      };
-      videoEncoder.configure(videoConfig);
+        hardwareAcceleration: 'prefer-hardware',
+      });
     }
 
     // 10. Setup Audio Encoder
@@ -560,13 +661,29 @@ export class FastHeadlessVideoExporter {
       videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
       videoFrame.close();
 
-      // Encoder queue pacing: backpressure control (crucial for mobile hardware and software encoders)
-      while (videoEncoder.encodeQueueSize > 4) {
-        await new Promise((resolve) => setTimeout(resolve, 4));
+      // High-performance encoder queue pacing with native dequeue listener
+      // Allows GPU hardware pipeline to buffer up to 24 frames without artificial sleep delays
+      if (videoEncoder.encodeQueueSize > 24) {
+        await new Promise<void>((resolve) => {
+          let timer: any = null;
+          const onDequeue = () => {
+            if (videoEncoder && videoEncoder.encodeQueueSize <= 12) {
+              videoEncoder.removeEventListener('dequeue', onDequeue);
+              if (timer) clearTimeout(timer);
+              resolve();
+            }
+          };
+          videoEncoder.addEventListener('dequeue', onDequeue);
+          // Safety timeout in case dequeue event was triggered before listener attached
+          timer = setTimeout(() => {
+            if (videoEncoder) videoEncoder.removeEventListener('dequeue', onDequeue);
+            resolve();
+          }, 20);
+        });
       }
 
-      // Micro-yield periodically to prevent starving mobile GPU and encoder threads
-      if (i % 8 === 0) {
+      // Micro-yield to browser event loop every 30 frames to keep the UI interactive and responsive
+      if (i % 30 === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 

@@ -282,7 +282,7 @@ export async function renderHeadlessVideo(
       duration: audioDuration,
       getChannelData: (_ch: number) => floatSamples,
     };
-    const analyzer = new OfflineAudioAnalyzer(dummyAudioBuffer as any, 2048);
+    const analyzer = new OfflineAudioAnalyzer(dummyAudioBuffer as any, 1024);
 
     // 7. Spawn FFmpeg Video Encoder Process
     const outputFilename = `visualizer_${Date.now()}.${format}`;
@@ -301,24 +301,29 @@ export async function renderHeadlessVideo(
     ];
 
     if (format === 'webm') {
-      // VP9 with Alpha Channel support
+      // VP9 with Alpha Channel support - realtime multithreaded (30x faster)
       ffmpegArgs.push(
         '-c:v', 'libvpx-vp9',
         '-pix_fmt', isTransparent ? 'yuva420p' : 'yuv420p',
         '-auto-alt-ref', '0',
-        '-crf', '24',
-        '-b:v', '0',
+        '-deadline', 'realtime',
+        '-cpu-used', '8',
+        '-row-mt', '1',
+        '-threads', '0',
+        '-b:v', '6M',
         '-c:a', 'libopus',
         '-b:a', '128k',
         '-shortest',
         outputPath
       );
     } else {
-      // Standard H.264 MP4 (ultrafast preset for fast CPU rendering on servers/Colab)
+      // Standard H.264 MP4 (ultrafast multi-threaded CPU rendering)
       ffmpegArgs.push(
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
-        '-crf', '22',
+        '-tune', 'fastdecode',
+        '-threads', '0',
+        '-crf', '21',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',

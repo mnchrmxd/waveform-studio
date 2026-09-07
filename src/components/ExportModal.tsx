@@ -707,7 +707,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                           : 'text-neutral-400 hover:text-white'
                       }`}
                     >
-                      30 FPS
+                      30 FPS <span className="text-[10px] text-amber-400 font-mono ml-1">⚡ 2x Faster</span>
                     </button>
                   </div>
                 </div>
@@ -879,10 +879,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     ? 'Rendering Transparent Alpha Video'
                     : 'Headless Video Rendering'}
                 </h3>
-                <p className="text-xs text-cyan-400 font-mono">
-                  {progress.fps > 0
-                    ? `⚡ ${progress.fps} FPS`
-                    : 'Encoding audio & initializing frames...'}
+                <p className="text-xs text-cyan-400 font-mono flex items-center justify-center gap-2">
+                  {progress.fps > 0 ? (
+                    <>
+                      <span>⚡ {progress.fps} FPS</span>
+                      {progress.speedMultiplier ? (
+                        <span className="text-amber-400 font-semibold">({progress.speedMultiplier}x realtime)</span>
+                      ) : null}
+                      {progress.estimatedRemainingSeconds ? (
+                        <span className="text-neutral-400">| ~{progress.estimatedRemainingSeconds}s remaining</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    'Encoding audio & initializing frames...'
+                  )}
                 </p>
               </div>
 

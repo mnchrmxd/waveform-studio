@@ -147,7 +147,7 @@ export class OfflineAudioAnalyzer {
   private lastAnalysisTime: number = -1;
   private smoothedBassEnergy: number = 0;
 
-  constructor(buffer: AudioBuffer, fftSize: number = 2048) {
+  constructor(buffer: AudioBuffer, fftSize: number = 1024) {
     this.sampleRate = buffer.sampleRate;
     this.fftSize = fftSize;
     this.halfSize = fftSize / 2;
@@ -241,12 +241,13 @@ export class OfflineAudioAnalyzer {
 
     // Decibel normalization matching Web Audio AnalyserNode:
     // minDecibels = -95 dB, maxDecibels = -25 dB, dynamic range = 70 dB
-    const invFFTSize2 = (1.0 / fftSize) * 2;
+    // 20 * log10(mag) == 10 * log10(magSq), eliminating Math.sqrt on every bin
+    const invFFTSizeSq4 = ((1.0 / fftSize) * 2) * ((1.0 / fftSize) * 2);
     for (let i = 0; i < this.halfSize; i++) {
       const r = this.realBuf[i];
       const im = this.imagBuf[i];
-      const mag = Math.sqrt(r * r + im * im) * invFFTSize2;
-      const db = 20 * Math.log10(Math.max(1e-5, mag));
+      const magSq = (r * r + im * im) * invFFTSizeSq4;
+      const db = 10 * Math.log10(Math.max(1e-10, magSq));
       this.rawMagnitudes[i] = Math.max(0, Math.min(1.0, (db + 95) / 70));
     }
 
