@@ -16,9 +16,12 @@ import {
   Type,
   User,
   Grid,
+  Cpu,
+  Cloud,
 } from 'lucide-react';
 import {
   fastVideoExporter,
+  audioBufferToWavBlob,
   ExportConfig,
   ExportProgress,
   ExportResult,
@@ -123,6 +126,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [renderEngine, setRenderEngine] = useState<'client' | 'server'>('client');
+  const serverAbortRef = React.useRef<AbortController | null>(null);
+  const serverSseRef = React.useRef<EventSource | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -266,8 +272,173 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
+  const handleServerExport = async () => {
+    if (!audioBuffer) return;
+
+    setIsExporting(true);
+    setErrorMessage(null);
+    setExportResult(null);
+
+    const serverJobId = activeJobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    addDebugLog(`Starting Cloud Server FFmpeg Render for job "${serverJobId}"...`, 'info');
+
+    const totalEstFrames = Math.round(exportDuration * fps);
+    setProgress({
+      currentFrame: 0,
+      totalFrames: totalEstFrames,
+      percentage: 2,
+      fps: 0,
+      speedMultiplier: 0,
+      elapsedSeconds: 0,
+      estimatedRemainingSeconds: Number((exportDuration * 0.7).toFixed(1)),
+      status: 'preparing',
+    });
+
+    // 1. Prepare high-fidelity audio track as base64 data URL
+    addDebugLog('Encoding lossless WAV track for cloud renderer...', 'info');
+    let audioBase64 = '';
+    try {
+      const wavBlob = audioBufferToWavBlob(audioBuffer, activeStart, activeEnd);
+      audioBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(wavBlob);
+      });
+      addDebugLog(`Lossless audio ready (${(audioBase64.length / 1024).toFixed(0)} KB)`, 'info');
+    } catch (wavErr: any) {
+      addDebugLog(`Failed to prepare audio: ${wavErr.message}`, 'warn');
+      setIsExporting(false);
+      setErrorMessage(`Audio processing error: ${wavErr.message}`);
+      return;
+    }
+
+    // 2. Connect to SSE stream for live progress tracking
+    const sse = new EventSource(`/api/render-progress/${serverJobId}`);
+    serverSseRef.current = sse;
+    const startRenderTime = performance.now();
+
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.progress !== undefined) {
+          const elapsed = (performance.now() - startRenderTime) / 1000;
+          const pct = Math.max(2, Math.min(99, data.progress));
+          const estTotal = pct > 0 ? (elapsed / pct) * 100 : 0;
+          const rem = Math.max(0, estTotal - elapsed);
+
+          setProgress({
+            currentFrame: data.currentFrame || Math.round((pct / 100) * totalEstFrames),
+            totalFrames: data.totalFrames || totalEstFrames,
+            percentage: pct,
+            fps: data.fps || 0,
+            speedMultiplier: data.fps ? Number((data.fps / fps).toFixed(1)) : 1,
+            elapsedSeconds: Number(elapsed.toFixed(1)),
+            estimatedRemainingSeconds: Number(rem.toFixed(1)),
+            status: data.status === 'completed' ? 'finalizing' : 'rendering-video',
+          });
+
+          if (data.message && data.progress % 10 === 0) {
+            addDebugLog(`[Cloud Engine] ${data.message}`, 'frame');
+          }
+        }
+      } catch {}
+    };
+
+    const abortCtrl = new AbortController();
+    serverAbortRef.current = abortCtrl;
+
+    const dims = getExportDimensions();
+    const exportSettings: VisualizerSettings = {
+      ...settings,
+      showTrackInfo: effectiveTrackInfo,
+      showProfileImage: effectiveProfileImage,
+      showDbGrid: effectiveDbGrid,
+    };
+
+    const serverFormat = format === 'webm-alpha' ? 'webm' : format === 'png-sequence' ? 'mp4' : format;
+    const isMp4 = serverFormat === 'mp4';
+    const serverPayload = {
+      jobId: serverJobId,
+      audio: audioBase64,
+      video: {
+        width: dims.width,
+        height: dims.height,
+        fps,
+        format: serverFormat,
+        bitrate: Math.round(videoBitrate / 1000),
+      },
+      settings: exportAlpha ? { ...exportSettings, backgroundType: 'transparent' } : exportSettings,
+      theme,
+      trimStart: activeStart,
+      trimEnd: activeEnd,
+      profileImage: effectiveProfileImage ? profileImageUrl || profileImage?.src : undefined,
+      backgroundImage: !exportAlpha ? backgroundImageUrl || backgroundImage?.src : undefined,
+    };
+
+    try {
+      addDebugLog('Dispatching rendering job to backend FFmpeg pipeline...', 'info');
+      const res = await fetch(`/api/render-video?jobId=${serverJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serverPayload),
+        signal: abortCtrl.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Server render error (${res.status}): ${errText}`);
+      }
+
+      addDebugLog('Cloud render complete! Streaming finalized video binary...', 'success');
+      const blob = await res.blob();
+      sse.close();
+      serverSseRef.current = null;
+
+      const videoUrl = URL.createObjectURL(blob);
+      const totalRenderTime = Number(((performance.now() - startRenderTime) / 1000).toFixed(1));
+      const avgFps = Math.round(totalEstFrames / Math.max(0.1, totalRenderTime));
+
+      const cleanTitle = (settings.trackTitle || 'visualizer').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+      const alphaTag = exportAlpha ? '_alpha' : '';
+      const fileName = `${cleanTitle}${alphaTag}_${resolution}_${fps}fps.${isMp4 ? 'mp4' : 'webm'}`;
+
+      const finalResult: ExportResult = {
+        blob,
+        url: videoUrl,
+        fileName,
+        fileSize: blob.size,
+        duration: exportDuration,
+        renderTimeSec: totalRenderTime,
+        averageFps: avgFps,
+        totalFrames: totalEstFrames,
+        width: dims.width,
+        height: dims.height,
+      };
+
+      setExportResult(finalResult);
+      setIsExporting(false);
+      addDebugLog(`Cloud export succeeded: ${(blob.size / (1024 * 1024)).toFixed(2)} MB in ${totalRenderTime}s`, 'success');
+    } catch (serverErr: any) {
+      sse.close();
+      serverSseRef.current = null;
+      if (abortCtrl.signal.aborted) {
+        addDebugLog('Server render cancelled by user.', 'warn');
+        setIsExporting(false);
+        return;
+      }
+      setIsExporting(false);
+      setErrorMessage(serverErr.message || 'Server rendering failed.');
+      addDebugLog(`Server render error: ${serverErr.message}`, 'warn');
+    }
+  };
+
   const handleStartExport = async () => {
     if (!audioBuffer) return;
+
+    if (renderEngine === 'server') {
+      return handleServerExport();
+    }
 
     setIsExporting(true);
     setErrorMessage(null);
@@ -366,7 +537,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const handleCancelExport = () => {
-    fastVideoExporter.cancel();
+    if (renderEngine === 'server') {
+      serverAbortRef.current?.abort();
+      serverSseRef.current?.close();
+      serverSseRef.current = null;
+    } else {
+      fastVideoExporter.cancel();
+    }
     setIsExporting(false);
     setProgress(null);
     addDebugLog('Export cancelled by user', 'warn');
@@ -492,6 +669,68 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {/* Configuration Form */}
           {!isExporting && !exportResult && (
             <>
+              {/* Architecture Engine Selector */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
+                    <span>Rendering Engine Architecture</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-neutral-400">
+                    {renderEngine === 'client' ? 'Client WebCodecs' : 'Cloud Server FFmpeg'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    id="engine-client-btn"
+                    type="button"
+                    onClick={() => setRenderEngine('client')}
+                    className={`p-3 rounded-xl border text-left flex flex-col gap-1.5 transition-all cursor-pointer ${
+                      renderEngine === 'client'
+                        ? 'bg-neutral-900 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
+                        : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Cpu className={`w-4 h-4 ${renderEngine === 'client' ? 'text-cyan-400' : 'text-neutral-500'}`} />
+                        <span className="font-bold text-xs text-white">Client GPU (Fast)</span>
+                      </div>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                        Hardware Accel
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-neutral-400 leading-relaxed">
+                      In-browser WebCodecs pipeline with bounded memory queues. Instant start with 0 network upload.
+                    </span>
+                  </button>
+
+                  <button
+                    id="engine-server-btn"
+                    type="button"
+                    onClick={() => setRenderEngine('server')}
+                    className={`p-3 rounded-xl border text-left flex flex-col gap-1.5 transition-all cursor-pointer ${
+                      renderEngine === 'server'
+                        ? 'bg-neutral-900 border-blue-400 ring-2 ring-blue-500/20 text-white'
+                        : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Cloud className={`w-4 h-4 ${renderEngine === 'server' ? 'text-blue-400' : 'text-neutral-500'}`} />
+                        <span className="font-bold text-xs text-white">Cloud Server (Zero RAM)</span>
+                      </div>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                        Crash Immune
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-neutral-400 leading-relaxed">
+                      Offloads rendering to background server FFmpeg. 0% browser memory footprint, never crashes the tab.
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               {/* Alpha Transparency Toggle Card */}
               <div
                 id="toggle-alpha-export-card"
@@ -842,12 +1081,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
               {/* Error Display */}
               {errorMessage && (
-                <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold">Export Error: </span>
-                    <span>{errorMessage}</span>
+                <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex flex-col gap-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold">Export Error Encountered: </span>
+                      <span>{errorMessage}</span>
+                    </div>
                   </div>
+
+                  {renderEngine === 'client' && (
+                    <div className="pt-1 flex items-center justify-between gap-3 border-t border-rose-500/20">
+                      <span className="text-[11px] text-rose-300/80">
+                        Browser memory exhausted or GPU driver reset?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenderEngine('server');
+                          setErrorMessage(null);
+                          setTimeout(() => {
+                            handleServerExport();
+                          }, 50);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer"
+                      >
+                        <Cloud className="w-3.5 h-3.5" />
+                        <span>Switch to Cloud Server & Retry</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -999,8 +1262,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <video
                       src={exportResult.url}
                       controls
-                      autoPlay
-                      loop
+                      preload="metadata"
+                      playsInline
                       className="w-full max-h-[280px] object-contain block"
                     />
                   </div>
@@ -1083,19 +1346,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <button
                 id="start-headless-export-btn"
                 onClick={handleStartExport}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 transition-all cursor-pointer ring-1 ring-cyan-400/30 active:scale-[0.98]"
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-white font-bold text-xs shadow-lg transition-all cursor-pointer ring-1 active:scale-[0.98] ${
+                  renderEngine === 'server'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/25 ring-blue-400/30'
+                    : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-cyan-500/25 ring-cyan-400/30'
+                }`}
               >
                 {format === 'png-sequence' ? (
                   <FileArchive className="w-4 h-4" />
+                ) : renderEngine === 'server' ? (
+                  <Cloud className="w-4 h-4" />
                 ) : (
                   <Zap className="w-4 h-4 fill-current" />
                 )}
                 <span>
                   {format === 'png-sequence'
                     ? 'Export PNG Sequence'
+                    : renderEngine === 'server'
+                    ? exportAlpha
+                      ? 'Render Alpha (Cloud FFmpeg)'
+                      : 'Render on Cloud Server'
                     : exportAlpha
                     ? 'Export Alpha Video'
-                    : 'Render'}
+                    : 'Render (GPU Fast)'}
                 </span>
               </button>
             </div>

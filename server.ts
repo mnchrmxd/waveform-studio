@@ -369,8 +369,8 @@ async function startServer() {
   // API 3: Core Headless Video Generation Endpoint (Synchronous or Server-Side)
   const handleRenderVideo = async (req: express.Request, res: express.Response) => {
     try {
-      const body: HeadlessVideoOptions = req.body || {};
-      const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const body: HeadlessVideoOptions & { jobId?: string } = req.body || {};
+      const jobId = (req.query.jobId as string) || body.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
       console.log(`[Headless Render] Started render request. Dimensions: ${body.video?.width || 1280}x${body.video?.height || 720}, Format: ${body.video?.format || 'mp4'}`);
 

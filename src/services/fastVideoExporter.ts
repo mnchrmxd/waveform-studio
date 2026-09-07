@@ -374,7 +374,7 @@ export class FastHeadlessVideoExporter {
     }
 
     // 5. Prepare Offline Fast FFT Analyzer (1024 points for fast 43Hz binning & continuous sub-bin interpolation)
-    const analyzer = new OfflineAudioAnalyzer(audioBuffer, 1024);
+    let analyzer: OfflineAudioAnalyzer | null = new OfflineAudioAnalyzer(audioBuffer, 1024);
 
     // 6. Create Offscreen or Virtual Canvas
     let canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -421,7 +421,8 @@ export class FastHeadlessVideoExporter {
           sampleRate: audioBuffer.sampleRate,
           numberOfChannels: Math.min(2, audioBuffer.numberOfChannels),
         },
-        fastStart: 'in-memory',
+        // fastStart: false writes chunk bytes directly to target without accumulating all chunk objects in memory
+        fastStart: false,
       });
     } else {
       webmMuxer = new WebmMuxer({
@@ -443,13 +444,18 @@ export class FastHeadlessVideoExporter {
 
     // 9. Setup Video Encoder
     let videoEncoder: VideoEncoder | null = null;
+    let fatalError: Error | null = null;
     const videoInit = {
       output: (chunk: EncodedVideoChunk, meta?: EncodedVideoChunkMetadata) => {
-        if (mp4Muxer) mp4Muxer.addVideoChunk(chunk, meta);
-        if (webmMuxer) webmMuxer.addVideoChunk(chunk, meta);
+        try {
+          if (mp4Muxer) mp4Muxer.addVideoChunk(chunk, meta);
+          if (webmMuxer) webmMuxer.addVideoChunk(chunk, meta);
+        } catch (err: any) {
+          fatalError = err instanceof Error ? err : new Error(String(err));
+        }
       },
       error: (e: DOMException) => {
-        throw new Error(`Video encoding failed: ${e.message}`);
+        fatalError = new Error(`Video encoder error: ${e.message}`);
       },
     };
 
@@ -566,6 +572,17 @@ export class FastHeadlessVideoExporter {
 
         audioEncoder.encode(audioData);
         audioData.close();
+
+        // Audio backpressure pacing: ensure audio encoder queue stays small and doesn't swamp memory
+        while (audioEncoder.encodeQueueSize > 8) {
+          if (fatalError) throw fatalError;
+          await new Promise<void>((resolve) => setTimeout(resolve, 2));
+        }
+
+        // Periodic yield to allow garbage collection during long audio tracks
+        if ((s / audioChunkFrames) % 50 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       }
 
       await audioEncoder.flush();
@@ -661,29 +678,32 @@ export class FastHeadlessVideoExporter {
       videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
       videoFrame.close();
 
-      // High-performance encoder queue pacing with native dequeue listener
-      // Allows GPU hardware pipeline to buffer up to 24 frames without artificial sleep delays
-      if (videoEncoder.encodeQueueSize > 24) {
+      // Strict bounded encoder queue pacing:
+      // Never allow more than 2 uncompressed frames to accumulate in GPU/encoder memory.
+      // This eliminates the massive queue buildup that causes GPU out-of-memory and browser crashes.
+      while (videoEncoder.encodeQueueSize > 2) {
+        if (fatalError) throw fatalError;
         await new Promise<void>((resolve) => {
-          let timer: any = null;
+          let resolved = false;
           const onDequeue = () => {
-            if (videoEncoder && videoEncoder.encodeQueueSize <= 12) {
-              videoEncoder.removeEventListener('dequeue', onDequeue);
-              if (timer) clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              if (videoEncoder && 'removeEventListener' in videoEncoder) {
+                videoEncoder.removeEventListener('dequeue', onDequeue);
+              }
               resolve();
             }
           };
-          videoEncoder.addEventListener('dequeue', onDequeue);
-          // Safety timeout in case dequeue event was triggered before listener attached
-          timer = setTimeout(() => {
-            if (videoEncoder) videoEncoder.removeEventListener('dequeue', onDequeue);
-            resolve();
-          }, 20);
+          if ('addEventListener' in videoEncoder) {
+            videoEncoder.addEventListener('dequeue', onDequeue, { once: true });
+          }
+          // Polling fallback every 4ms in case dequeue event was missed
+          setTimeout(onDequeue, 4);
         });
       }
 
-      // Micro-yield to browser event loop every 30 frames to keep the UI interactive and responsive
-      if (i % 30 === 0) {
+      // Micro-yield to browser event loop every 15 frames to keep UI responsive and allow GC passes
+      if (i % 15 === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
@@ -715,6 +735,8 @@ export class FastHeadlessVideoExporter {
       }
     }
 
+    if (fatalError) throw fatalError;
+
     // 12. Finalize & Mux
     onProgress?.({
       currentFrame: totalFrames,
@@ -727,9 +749,25 @@ export class FastHeadlessVideoExporter {
       status: 'finalizing',
     });
 
+    // Flush remaining frames (guaranteed <= 2 frames in queue due to strict pacing)
     await videoEncoder.flush();
     videoEncoder.close();
-    if (audioEncoder) audioEncoder.close();
+    videoEncoder = null;
+    if (audioEncoder) {
+      audioEncoder.close();
+      audioEncoder = null;
+    }
+
+    // Immediately release canvas GPU framebuffers, textures, and audio FFT buffers
+    if (canvas instanceof HTMLCanvasElement) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    ctx = null;
+    analyzer = null;
+
+    // Micro-yield to allow browser GC to reclaim canvas textures and intermediate frame buffers
+    await new Promise((resolve) => setTimeout(resolve, 40));
 
     let rawBuffer: ArrayBuffer;
     let mimeType = 'video/mp4';
@@ -738,15 +776,21 @@ export class FastHeadlessVideoExporter {
       mp4Muxer.finalize();
       rawBuffer = mp4Muxer.target.buffer;
       mimeType = 'video/mp4';
+      mp4Muxer = null;
     } else if (webmMuxer) {
       webmMuxer.finalize();
       rawBuffer = webmMuxer.target.buffer;
       mimeType = 'video/webm';
+      webmMuxer = null;
     } else {
       throw new Error('Muxer instance was not initialized.');
     }
 
+    // Micro-yield before Blob allocation to ensure clean memory transition
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
     const videoBlob = new Blob([rawBuffer], { type: mimeType });
+    rawBuffer = null as any;
     const videoUrl = URL.createObjectURL(videoBlob);
     const totalRenderTime = (performance.now() - startTime) / 1000;
     const averageFps = Math.round(totalFrames / Math.max(0.1, totalRenderTime));
