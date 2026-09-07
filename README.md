@@ -1,47 +1,35 @@
-# Audio Waveform Studio & High-Speed Video Rendering Suite
+# Waveform Studio
 
-A full-stack, studio-grade audio visualizer and video generation suite. Create real-time audio reactive animations directly in the browser or render videos programmatically via a headless REST API or hardware-accelerated **Web Request to Local Webpage Renderer**.
-
----
-
-## What's New & Architecture Updates
-
-1. **Unified Web Request & Video Export Architecture (GPU Accelerated)**:
-   - Headless CPU rendering on restricted environments (such as Google Colab or low-core Node.js servers) can be CPU-bound.
-   - The export video UI and webpage renderer are unified into a single coherent WebCodecs pipeline. You can submit a render job via `POST /api/render-job` and open the local webpage (`/render?jobId=...` or `/`) to execute the render using **hardware-accelerated WebCodecs**.
-   - Features real-time Server-Sent Events (SSE) progress streaming (`GET /api/render-progress/:jobId`), detailed telemetry (current frame, total frames, active FPS, elapsed seconds), optional **Debug Mode** terminal toggle, and automatic file upload/download.
-   - Retired arbitrary "Nx real-time" multipliers and placebo ETA estimates in favor of exact frame counts and live frame rendering throughput.
-
-2. **Mobile UI Export Optimization (Zero Dropped Frames)**:
-   - Mobile hardware encoders (Qualcomm, Apple Silicon, MediaTek) drop frames if frames are pushed faster than the encoder's internal pipeline drains.
-   - The export engine uses `latencyMode: 'quality'`, removes desynchronized canvas contexts, and enforces active backpressure pacing (`encodeQueueSize <= 2`). Mobile exports maintain buttery-smooth 60 FPS / 30 FPS output with zero frame dropping.
-
-3. **FFmpeg Headless Speed Boost**:
-   - Server-side headless renders now use the `ultrafast` H.264 / VP9 preset, reducing CPU rendering bottlenecks for programmatic pipelines.
-
-4. **Deprecation of Audio Duration & Trimming**:
-   - Audio trimming inputs and duration overrides have been deprecated. The visualizer always decodes and renders the full audio track naturally from start to finish with zero awkward cutoffs.
+A full-stack, studio-grade audio visualizer and video generation suite. Create real-time audio-reactive animations directly in the browser or render videos programmatically via a headless REST API or hardware-accelerated **Web Request to Local Webpage Renderer**.
 
 ---
 
 ## Features
 
 - **Interactive Studio UI**:
-  - Multiple visualizer styles: Mirrored Bars, Radial / Circular Spectrum, Glowing Waves, Vinyl Turntable, Reactive Particle Rings, and more.
-  - Audio reactive dynamics with adjustable FFT smoothing, frequency weighting, peak hold, and soft-knee compression.
-  - Profile badges (circular, hexagonal, rounded) and custom background album artwork.
-  - Transparent video export mode (WebM with alpha channel / ProRes compatibility) for video overlay in Premiere, After Effects, DaVinci Resolve, or OBS.
-  - Social media aspect ratio presets: `16:9` (YouTube / Landscape), `9:16` (TikTok / Reels / Shorts), `1:1` (Instagram Feed), and `21:9` (Cinematic Ultrawide).
-  - Audio input options: File upload (MP3, WAV, AAC, FLAC, OGG), Remote URL streaming, built-in demo tracks, or live microphone capture.
+  - **7 Visualizer Styles**: Mirrored Bars, Spectrum Bars, Smooth Wave, Radial Spectrum, Digital Matrix, Spine, and Spectrum Bands.
+  - **Color Themes & Representation**: Built-in curated themes (Cyber Cyan, Electric Indigo, Sunset Ember, Emerald Matrix, Monochrome Luxe, Solar Flare, Nordic Frost) or custom RGB gradients with multiple representation modes (bottom-to-top, top-to-bottom, left-to-right, right-to-left, inside-out horizontal/vertical/circular, alternate bars).
+  - **Center Avatar / Badge**: Circle, rounded, and square avatars with customizable border size, border color, audio-reactive bass pulse, and subtle glow.
+  - **Waveform Symmetry & Flanking**: Symmetrical layouts including `none`, `mirrored-flank`, and `split-cutout` with adjustable profile wing gaps.
+  - **Joint / Edge Tapering**: Smoothly taper bars towards zero at outer edges and/or next to the center profile badge, with configurable width (5–40%) and curve geometry (`smooth`, `linear`, `cubic`).
+  - **Audio Dynamics & Reactivity**: Fine-tune FFT smoothing, bar count, sensitivity, frequency weighting, peak hold, soft-knee peak compression, and fluid easing transitions.
+  - **Flexible Backgrounds**: Dark Studio, OLED Black, Light Canvas, Radial Spotlight, Gradient Mesh, Custom Solid Color, Custom Uploaded Artwork (Image / Looping Video with blur and dim controls), or Transparent Mode.
+  - **Social Media Aspect Ratio Presets**: `16:9` (YouTube / Landscape), `9:16` (TikTok / Reels / Shorts), `1:1` (Instagram Feed), `21:9` (Cinematic Ultrawide), `3:1` (Banner), and `responsive`.
+  - **Audio Input Options**: Local file upload (MP3, WAV, AAC, FLAC, OGG), remote URL streaming via built-in CORS proxy, pre-synthesized demo tracks, or live microphone capture.
 
-- **Dual Rendering Paradigms**:
-  1. **Web Request Browser Renderer (`POST /api/render-job` & `/render?jobId=...`)**:
-     - Web-based local webpage rendering utilizing client GPU WebCodecs.
-     - Ultra-fast frame throughput with live Server-Sent Events progress reporting.
-  2. **Direct Server-Side Headless API (`POST /api/render-video`)**:
-     - Node.js `@napi-rs/canvas` + FFmpeg (`ultrafast` preset).
-     - Direct binary streaming or Base64 JSON output.
-     - Live progress streaming via `X-Render-Job-Id`.
+- **Dual Rendering Paradigms & Export Engines**:
+  1. **Client GPU Engine (WebCodecs)**:
+     - Modern in-browser rendering utilizing hardware-accelerated WebCodecs (`VideoEncoder`) paired with `mp4-muxer` and `webm-muxer`, falling back to `MediaRecorder`.
+     - Operates entirely client-side; fully functional in offline environments or static hosting without requiring a Node.js server.
+     - Zero dropped frames via active backpressure pacing and quality latency modes on both desktop and mobile devices.
+  2. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
+     - Server-side headless rendering utilizing Node.js `@napi-rs/canvas` and `ffmpeg-static` (`ultrafast` / `realtime` presets).
+     - Generates zero client memory load; suitable for low-spec client hardware or automated worker scripts.
+     - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active, cloud server rendering is automatically disabled with visual notice, seamlessly routing exports through the Client GPU engine.
+  3. **Alpha Channel Transparency**:
+     - Export transparent WebM videos (`libvpx-vp9` with `yuva420p` pixel format) for direct overlay in video editors such as Premiere Pro, DaVinci Resolve, Final Cut, and OBS Studio.
+  4. **PNG Image Sequence (ZIP)**:
+     - Export full-resolution frame-by-frame PNG sequences zipped in-memory for post-production workflows.
 
 ---
 
@@ -56,7 +44,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [Loading Audio](#loading-audio)
    - [Customizing Visuals](#customizing-visuals)
    - [Rendering in Browser (Studio UI)](#rendering-in-browser-studio-ui)
-   - [Hardware-Accelerated Webpage Renderer](#hardware-accelerated-webpage-renderer)
+   - [Unified Export & Webpage Renderer](#unified-export--webpage-renderer)
    - [Generating API Payloads](#generating-api-payloads)
 3. [API Documentation](#api-documentation)
    - [API Endpoints Overview](#api-endpoints-overview)
@@ -68,7 +56,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [`GET /api/health`](#get-apihealth)
    - [`GET /api/proxy`](#get-apiproxy)
 4. [API Code Examples](#api-code-examples)
-   - [Web Request Workflow (cURL + Browser / Headless Chrome)](#web-request-workflow-curl--browser)
+   - [Web Request Workflow (cURL + Browser)](#web-request-workflow-curl--browser)
    - [Direct Headless cURL](#direct-headless-curl)
    - [Node.js Script](#nodejs-script)
    - [Python Script](#python-script)
@@ -89,32 +77,14 @@ Follow these steps to clone and run the application locally on your machine.
      node -v
      npm -v
      ```
-2. **FFmpeg**: Required for server-side headless video rendering (`POST /api/render-video`).
-   - **macOS** (Homebrew):
-     ```bash
-     brew install ffmpeg
-     ```
-   - **Ubuntu / Debian**:
-     ```bash
-     sudo apt update && sudo apt install -y ffmpeg
-     ```
-   - **Windows** (Chocolatey / Winget):
-     ```bash
-     choco install ffmpeg
-     # or
-     winget install "FFmpeg (Shared)"
-     ```
-   - Verify FFmpeg is accessible in your `PATH`:
-     ```bash
-     ffmpeg -version
-     ```
+2. **FFmpeg**: Bundled automatically via the `ffmpeg-static` npm package. A separate system FFmpeg installation is optional but supported as a fallback.
 
 ### Installation
 
 1. Clone or download the repository into your local directory:
    ```bash
    git clone <repository-url>
-   cd audio-waveform-visualizer
+   cd waveform-studio
    ```
 
 2. Install Node.js dependencies:
@@ -158,7 +128,8 @@ Expected output:
     "headlessRendering": true,
     "mp4Export": true,
     "transparentAlphaWebm": true,
-    "fftAnalyzer": true
+    "fftAnalyzer": true,
+    "ffmpegSource": "npm (ffmpeg-static)"
   }
 }
 ```
@@ -170,28 +141,28 @@ Expected output:
 ### Loading Audio
 1. **Upload Audio**: Click the **Upload Audio** button in the header or drag-and-drop any audio file (`.mp3`, `.wav`, `.aac`, `.flac`, `.ogg`).
 2. **Audio URL**: Click the **Audio URL** button in the header to stream or import audio directly from an online HTTP/HTTPS URL. The backend automatically handles CORS proxying.
-3. **Demo Tracks**: Click **Demo Tracks** to pick from pre-synthesized tracks (Synthwave, Ambient, Drum & Bass, Chill Lo-Fi).
+3. **Demo Tracks**: Click **Demo Tracks** to select from pre-synthesized tracks (Synthwave, Ambient, Drum & Bass, Chill Lo-Fi).
 4. **Record Mic**: Click **Record** to record real-time audio directly from your microphone.
 
 ### Customizing Visuals
 The side panel gives you granular control over every aspect of the animation:
-- **Visualizer Style**: Select from 8+ waveform types: Mirrored Bars, Bars, Circular Radial, Glowing Waves, Vinyl, Particle Rings, etc.
-- **Center Avatar / Badge**: Enable the center profile image, select shape (Circle, Square, Rounded, Hexagon), and either upload an image or provide an image URL.
-- **Color Themes**: Select from built-in themes (Cyber Cyan, Neon Violet, Sunset Ember, Emerald Matrix, Golden Lux, Monochrome) or define custom RGB gradients.
-- **Background**: Toggle between Dark Studio, Cyber Grid, Ambient Glow, Solid Color, Custom Background Artwork (via file or URL), or Transparent Mode.
-- **Reactivity & Dynamics**: Tune FFT smoothing, bar count, sensitivity, and peak hold.
+- **Visualizer Style**: Select from 7 distinct styles: Mirrored Bars, Spectrum Bars, Smooth Wave, Radial Spectrum, Digital Matrix, Spine, and Spectrum Bands.
+- **Center Avatar / Badge**: Enable the center profile image, select shape (Circle, Rounded, Square), set border attributes, and upload an image or provide an image URL.
+- **Color Themes**: Select from built-in themes (Cyber Cyan, Electric Indigo, Sunset Ember, Emerald Matrix, Monochrome Luxe, Solar Flare, Nordic Frost) or define custom RGB gradients and color representation modes.
+- **Background**: Toggle between Dark Studio, OLED Black, Light Canvas, Radial Spotlight, Gradient Mesh, Custom Solid Color, Custom Background Artwork (image or video), or Transparent Mode.
+- **Reactivity & Dynamics**: Tune FFT smoothing, bar count, sensitivity, soft-knee peak compression, and joint edge tapering.
 
 ### Rendering in Browser (Studio UI)
 1. Click **Export Video** in the top navigation header.
 2. Select your **Engine**:
    - **Client GPU** (Fast in-browser rendering via WebCodecs / MediaRecorder). Works completely client-side in any browser or static hosting environment without requiring a backend server.
    - **Cloud Server** (Zero client RAM, headless rendering using Node.js and FFmpeg). Automatically disabled with visual notice when running in client-only or static environments where a Node.js backend is not detected.
-3. Choose your resolution (`720p`, `1080p Full HD`, `4K UHD`), frame rate (`30fps` or `60fps`), and format (`MP4` or `WebM`).
+3. Choose your resolution (`720p`, `1080p Full HD`, `4K UHD`), frame rate (`30fps` or `60fps`), and format (`MP4`, `WebM`, or `PNG Sequence`).
 4. Toggle **Transparent Background** if you plan to overlay the video in Premiere Pro, DaVinci Resolve, or OBS.
 5. Click **Render Video**. The export engine automatically handles backpressure pacing and quality latency modes to ensure 100% stable framerates without frame drops on both desktop and mobile devices.
 
 ### Unified Export & Webpage Renderer
-- Export Video and the Webpage Renderer are completely unified into one seamless workflow.
+- Export Video and the Webpage Renderer are unified into one seamless workflow.
 - Opening `/render` or passing `?jobId=...` opens the Export Studio with the job configuration loaded and ready.
 - **Debug Mode Toggle**: Click the **Debug Mode** button in the Export header to inspect live frame-by-frame console telemetry, sample rates, WebCodecs buffer state, and server sync logs.
 - External systems (such as Colab or background worker scripts) can initiate high-speed GPU rendering inside a browser page via a simple web request (`POST /api/render-job`), which streams real-time progress back to the server and registers the finished MP4/WebM video for retrieval.
@@ -217,7 +188,7 @@ The server provides both a Web Request Job pipeline (recommended for fast GPU re
 | `GET` | `/api/render-progress/:id` | **Server-Sent Events (SSE)** stream delivering live frame rendering telemetry. |
 | `GET` | `/api/render-status/:id` | Pollable JSON status for a job (pending, rendering, completed, failed). |
 | `GET` | `/api/render-download/:id` | Downloads the completed video file produced by the webpage or server. |
-| `POST` | `/api/render-video` | Direct synchronous headless video render using FFmpeg (`ultrafast` preset). |
+| `POST` | `/api/render-video` | Direct synchronous headless video render using FFmpeg (`ultrafast` preset). Aliased to `/api/render-headless` and `/api/generate-video`. |
 | `GET` | `/api/render-video/schema` | Returns the complete parameter schema and available theme definitions. |
 | `GET` | `/api/health` | Healthcheck and capability verification. |
 | `GET` | `/api/proxy?url=<url>` | Permissive CORS proxy utility for remote audio or image assets. |
@@ -299,7 +270,7 @@ Direct synchronous headless video rendering via Node.js Canvas and FFmpeg (`ffmp
 - `Content-Type: application/json`
 
 #### Response
-Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment download, with the `X-Render-Job-Id` header attached for tracking.
+Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment download, with the `X-Render-Job-Id` header attached for tracking. Alternatively, pass `?format=json` in the query parameters to receive a JSON response containing metadata and a base64 Data URL.
 
 ---
 
@@ -307,17 +278,15 @@ Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment
 
 | Field | Type | Description |
 |---|---|---|
-| `audio` | `string` | Base64 data URI (`data:audio/mp3;base64,...`), raw Base64 string, or remote HTTP URL. If omitted, synthesizes a clean demo chord. Audio is always rendered in its entirety. |
-| `video.width` | `number` | Output video width in pixels (e.g. `1280`, `1920`, `1080`). Default: `1280`. |
-| `video.height` | `number` | Output video height in pixels (e.g. `720`, `1080`, `1920`). Default: `720`. |
-| `video.fps` | `number` | Frame rate (`30` or `60`). Default: `60` (or `30`). |
+| `audio` | `string` | Base64 data URI (`data:audio/mp3;base64,...`), raw Base64 string, or remote HTTP URL. If omitted, synthesizes a clean demo harmonic chord. Audio is decoded and rendered in its entirety. |
+| `video.width` | `number` | Output video width in pixels (e.g. `1280`, `1920`, `3840`). Default: `1280`. |
+| `video.height` | `number` | Output video height in pixels (e.g. `720`, `1080`, `2160`). Default: `720`. |
+| `video.fps` | `number` | Frame rate (`30` or `60`). Default: `30`. |
 | `video.format` | `string` | `"mp4"` (H.264 / AAC) or `"webm"` (VP9 / Opus). Default: `"mp4"`. |
-| `theme` | `string \| object` | Theme preset ID (`"cyber-cyan"`, `"neon-violet"`, `"sunset-ember"`, etc.) or custom `{ primaryColor, primaryGradientEnd, accentGlow }` object. |
+| `theme` | `string \| object` | Theme preset ID (`"cyber-cyan"`, `"electric-indigo"`, `"sunset-ember"`, `"emerald-mint"`, `"monochrome-luxe"`, `"solar-flare"`, `"nordic-frost"`) or custom `{ primaryColor, gradientColor }` object. |
 | `settings` | `object` | Visualizer styling options (see [Configuration Schema Reference](#configuration-schema-reference)). |
 | `profileImage` | `string` | Base64 data URI or remote HTTP URL for center avatar badge. |
 | `backgroundImage` | `string` | Base64 data URI or remote HTTP URL for background artwork. |
-
-*(Note: Audio duration and trimming controls are deprecated. The renderer automatically decodes the complete audio file, eliminating cutoff glitches.)*
 
 ---
 
@@ -385,7 +354,7 @@ curl -X POST http://localhost:3000/api/render-video \
       "format": "mp4"
     },
     "settings": {
-      "style": "circular-wave",
+      "style": "radial",
       "barCount": 96,
       "trackTitle": "Streaming Soundscape",
       "artistName": "Ambient World"
@@ -410,11 +379,11 @@ curl -X POST http://localhost:3000/api/render-video \
       "format": "webm"
     },
     "settings": {
-      "style": "radial-bars",
+      "style": "radial",
       "backgroundType": "transparent",
       "barCount": 64
     },
-    "theme": "neon-violet"
+    "theme": "electric-indigo"
   }' \
   --output transparent_overlay.webm
 ```
@@ -448,7 +417,7 @@ async function generateVisualizerVideo() {
       artistName: 'Synthwave Labs',
       backgroundType: 'dark-studio',
       enableJoint: true,
-      jointWidth: 48,
+      jointWidth: 20,
       jointCurve: 'smooth',
     },
     theme: 'cyber-cyan',
@@ -500,12 +469,12 @@ payload = {
         "format": "mp4"
     },
     "settings": {
-        "style": "wave",
+        "style": "smooth-wave",
         "trackTitle": "Python Automation",
         "artistName": "Waveform Engine",
-        "backgroundType": "gradient"
+        "backgroundType": "gradient-mesh"
     },
-    "theme": "emerald-matrix"
+    "theme": "emerald-mint"
 }
 
 print("Submitting render job...")
@@ -527,59 +496,85 @@ else:
 
 ### Visualizer Styles (`settings.style`)
 - `"mirrored-bars"`: Classic center-anchored dual-mirror equalizer bars.
-- `"bars"`: Bottom-anchored spectrum analyzer bars.
-- `"radial-bars"`: 360° circular equalizer expanding outwards around the center.
-- `"wave"`: Smooth flowing continuous waveform line with ambient glow.
-- `"circular-wave"`: Closed circular pulsating sine wave.
-- `"particles"`: Orbiting sound-reactive particle rings.
-- `"vinyl"`: Spinning retro vinyl turntable with radial sound grooves.
-- `"neon-pulse"`: High-energy glowing neon visualizer.
+- `"bars-up"`: Bottom-anchored spectrum analyzer bars.
+- `"smooth-wave"`: Fluid continuous bezier waveform line with ambient glow.
+- `"radial"`: 360° circular spectrum expanding outwards around the center.
+- `"digital-matrix"`: Matrix-style dot/segment digital equalizer.
+- `"spine"`: Organic central spine waveform structure with lateral ribs.
+- `"spectrum-bands"`: Multi-band grouped frequency equalizer blocks.
 
 ### Theme IDs (`theme`)
-- `"cyber-cyan"`: Cyberpunk Neon Cyan `#06b6d4` & Magenta `#ec4899`.
-- `"neon-violet"`: Electric Violet `#a855f7` & Radiant Pink `#f43f5e`.
-- `"sunset-ember"`: Warm Amber `#f59e0b` & Sunset Crimson `#ef4444`.
-- `"emerald-matrix"`: Matrix Emerald `#10b981` & Acid Green `#84cc16`.
-- `"golden-lux"`: Luxury Gold `#eab308` & Champagne Bronze `#f97316`.
-- `"monochrome-studio"`: Clean White `#f8fafc` & Platinum Gray `#94a3b8`.
+- `"cyber-cyan"`: Cyber Cyan `#06b6d4` & Magenta `#ec4899`.
+- `"electric-indigo"`: Electric Indigo `#6366f1` & Violet `#a855f7`.
+- `"sunset-ember"`: Sunset Ember `#f97316` & Gold `#ef4444`.
+- `"emerald-mint"`: Emerald Matrix `#10b981` & Lime `#84cc16`.
+- `"monochrome-luxe"`: Monochrome Studio Luxe `#e4e4e7` & Platinum `#a1a1aa`.
+- `"solar-flare"`: Solar Flare `#fbbf24` & Rose `#f43f5e`.
+- `"nordic-frost"`: Nordic Frost `#38bdf8` & Teal `#2dd4bf`.
+
+### Background Types (`settings.backgroundType`)
+- `"dark-studio"`: Deep studio vignette neutral backdrop.
+- `"oled-black"`: Pure `#000000` black background for maximum contrast.
+- `"light-canvas"`: Crisp modern light neutral theme.
+- `"radial-spotlight"`: Focused center spotlight glow.
+- `"gradient-mesh"`: Subtle multi-color gradient ambient field.
+- `"transparent"`: Alpha channel clear canvas (supports transparent WebM exports).
+- `"custom-solid"`: Solid color fill controlled by `settings.backgroundColor`.
 
 ### Core Settings Object (`settings`)
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `style` | `string` | `"mirrored-bars"` | Visualizer rendering algorithm. |
-| `barCount` | `number` | `80` | Number of frequency bars (`16` to `256`). |
-| `barWidth` | `number` | `4` | Width of individual bars in pixels. |
+| `style` | `string` | `"mirrored-bars"` | Visualizer rendering style. |
+| `barCount` | `number` | `80` | Number of frequency bars (`16` to `128`). |
+| `barWidthRatio` | `number` | `0.7` | Width of individual bars relative to slot (`0.1` to `1.0`). |
 | `barGap` | `number` | `2` | Spacing between bars in pixels. |
 | `barRadius` | `number` | `4` | Corner rounding radius of bars. |
-| `heightScale` | `number` | `1.0` | Vertical amplitude multiplier (`0.5` to `3.0`). |
-| `smoothing` | `number` | `0.65` | Temporal FFT frame smoothing (`0.1` to `0.95`). |
-| `sensitivity` | `number` | `1.0` | Audio volume responsiveness (`0.5` to `2.5`). |
+| `heightScale` | `number` | `1.0` | Vertical amplitude multiplier (`0.2` to `3.0`). |
+| `sensitivity` | `number` | `1.0` | Audio volume responsiveness gain (`0.2` to `3.0`). |
+| `softKneeCompression` | `boolean` | `true` | Soft-knee peak audio compression to prevent clipping. |
+| `symmetry` | `string` | `"mirror"` | Layout symmetry: `"mirror"`, `"top-only"`, `"bottom-only"`. |
+| `smoothing` | `number` | `0.65` | Temporal FFT frame smoothing (`0.0` to `1.0`). |
+| `easingMode` | `string` | `"organic-fluid"` | Easing transition: `"organic-fluid"`, `"snappy"`, `"liquid-flow"`, `"gentle"`. |
 | `glowIntensity` | `number` | `0.4` | Ambient visualizer glow (`0.0` to `1.0`). |
-| `enableJoint` | `boolean` | `true` | Bridge/joint connector between mirrored halves. |
-| `jointWidth` | `number` | `48` | Distance between mirrored bar rows. |
-| `jointCurve` | `string` | `"smooth"` | Joint geometry: `"flat"`, `"smooth"`, `"pointed"`, `"arch"`. |
-| `backgroundType` | `string` | `"dark-studio"` | `"dark-studio"`, `"gradient"`, `"solid"`, `"transparent"`. |
+| `enableJoint` | `boolean` | `true` | Enable edge and profile tapering. |
+| `jointAtEnds` | `boolean` | `true` | Taper waveform bars smoothly to zero at the outer ends. |
+| `jointAtProfile` | `boolean` | `true` | Taper waveform bars smoothly next to the profile avatar. |
+| `jointWidth` | `number` | `20` | Tapering transition width percentage (`5` to `40`). |
+| `jointCurve` | `string` | `"smooth"` | Taper geometry: `"smooth"`, `"linear"`, `"cubic"`. |
+| `backgroundType` | `string` | `"dark-studio"` | Background type setting. |
 | `showProfileImage` | `boolean` | `true` | Display center logo/avatar badge. |
-| `profileImageShape` | `string` | `"circle"` | Shape: `"circle"`, `"square"`, `"rounded"`, `"hexagon"`. |
+| `profileImageShape` | `string` | `"circle"` | Shape: `"circle"`, `"rounded"`, `"square"`. |
 | `profileImageSize` | `number` | `120` | Diameter/width of profile badge in pixels. |
+| `profileAudioReactiveScale` | `boolean` | `true` | Scale avatar reactively to low-frequency bass. |
+| `profileGlow` | `boolean` | `true` | Subtle radial glow around profile avatar. |
+| `sideSymmetry` | `string` | `"none"` | Layout flanking: `"none"`, `"mirrored-flank"`, `"split-cutout"`. |
+| `profileWingGap` | `number` | `24` | Gap in pixels between profile picture and waveform wings. |
 | `showTrackInfo` | `boolean` | `true` | Display track title and artist typography overlay. |
 | `trackTitle` | `string` | `""` | Primary title string. |
 | `artistName` | `string` | `""` | Subtitle / artist string. |
+| `infoPosition` | `string` | `"top-left"` | Info overlay position (`"top-left"`, `"top-right"`, `"bottom-left"`, `"center-top"`). |
+| `showWatermark` | `boolean` | `false` | Enable custom watermark text. |
+| `customWatermark` | `string` | `""` | Watermark text string. |
+| `showDbGrid` | `boolean` | `false` | Display subtle decibel background grid lines. |
+| `showCenterLine` | `boolean` | `false` | Display center horizon baseline. |
 
 ---
 
 ## Troubleshooting & FAQ
 
 ### 1. `Error: spawn ffmpeg ENOENT`
-- **Cause**: FFmpeg is not installed or not found in the system's `PATH`.
-- **Solution**: Install FFmpeg (`brew install ffmpeg` on macOS, `sudo apt install ffmpeg` on Linux, or add FFmpeg to Windows System Environment Variables). Confirm by typing `ffmpeg -version` in your terminal.
+- **Cause**: FFmpeg executable could not be located.
+- **Solution**: The application bundles `ffmpeg-static` in `node_modules` automatically. If running on a non-standard architecture, install system FFmpeg (`brew install ffmpeg` on macOS, `sudo apt install ffmpeg` on Linux) so the fallback detects `ffmpeg` in your `PATH`.
 
 ### 2. Can I render long audio files?
-- Yes. For full-length tracks (3–5 minutes), increase your client/cURL timeout. The API streams raw RGBA frames directly into FFmpeg without buffering entire uncompressed videos in RAM.
+- Yes. The API streams raw RGBA frames directly into FFmpeg without buffering uncompressed video in memory, supporting tracks of arbitrary length.
 
 ### 3. How do I get transparent video for editing?
 - Set `"settings": { "backgroundType": "transparent" }` and `"video": { "format": "webm" }`. FFmpeg will encode with the `libvpx-vp9` codec and `yuva420p` pixel format containing an alpha channel.
 
 ### 4. Large Base64 audio payload limit
 - The Express server is configured with a generous `100mb` body limit (`app.use(express.json({ limit: '100mb' }))`), accommodating high-resolution artwork and uncompressed WAV audio.
+
+### 5. Running in a static web hosting environment without Node.js
+- The web application features automated environment detection. When deployed to a static host (GitHub Pages, Vercel static, S3/CloudFront), the Cloud Server option is automatically disabled, and video exports proceed using the client GPU (WebCodecs / MediaRecorder) with zero server dependencies.
