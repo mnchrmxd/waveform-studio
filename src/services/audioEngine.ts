@@ -42,6 +42,8 @@ class AudioEngine {
   }
 
   public async decodeAudioFile(file: File): Promise<{ buffer: AudioBuffer; metadata: AudioMetadata; waveform: WaveformData }> {
+    // Yield to let React paint the loading indicator immediately before heavy file operations
+    await new Promise((resolve) => setTimeout(resolve, 10));
     const arrayBuffer = await file.arrayBuffer();
     return this.decodeArrayBuffer(arrayBuffer, file.name, file.size, file.type || 'audio/mpeg');
   }
@@ -72,55 +74,80 @@ class AudioEngine {
     format: string = 'audio/wav'
   ): Promise<{ buffer: AudioBuffer; metadata: AudioMetadata; waveform: WaveformData }> {
     const ctx = this.getContext();
+    // Yield to ensure event loop and UI stay completely responsive
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     // Use copy of arrayBuffer as decodeAudioData detaches the buffer
     const copy = arrayBuffer.slice(0);
     const audioBuffer = await ctx.decodeAudioData(copy);
     this.currentBuffer = audioBuffer;
 
-    const waveform = this.extractWaveformData(audioBuffer);
+    // Yield between decoding and waveform analysis
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const waveform = await this.extractWaveformDataAsync(audioBuffer);
     const metadata = this.calculateMetadata(audioBuffer, fileName, fileSize, format);
 
     return { buffer: audioBuffer, metadata, waveform };
   }
 
-  public extractWaveformData(buffer: AudioBuffer, targetSamples: number = 1000): WaveformData {
+  /**
+   * Non-blocking asynchronous waveform extraction with chunked yielding.
+   * Keeps browser UI 100% fluid even on long audio files.
+   */
+  public async extractWaveformDataAsync(buffer: AudioBuffer, targetSamples: number = 1000): Promise<WaveformData> {
     const numChannels = buffer.numberOfChannels;
-    const channelData: Float32Array[] = [];
-    for (let c = 0; c < numChannels; c++) {
-      channelData.push(buffer.getChannelData(c));
-    }
-
-    const primaryChannel = channelData[0];
-    const totalSamples = primaryChannel.length;
+    const ch0 = buffer.getChannelData(0);
+    const ch1 = numChannels > 1 ? buffer.getChannelData(1) : null;
+    const totalSamples = ch0.length;
     const blockSize = Math.max(1, Math.floor(totalSamples / targetSamples));
-    const peaks: number[] = [];
-    const rmsList: number[] = [];
+    // Stride samples inside each block to capture true envelope while keeping execution fast
+    const stride = Math.max(1, Math.floor(blockSize / 48));
 
+    const peaks: number[] = new Array(targetSamples);
+    const rmsList: number[] = new Array(targetSamples);
     let globalMax = 0;
 
+    const chunkSize = 250; // Yield every 250 blocks
+
     for (let i = 0; i < targetSamples; i++) {
+      if (i > 0 && i % chunkSize === 0) {
+        // Yield to allow animations and UI events to process
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
       const start = i * blockSize;
       const end = Math.min(start + blockSize, totalSamples);
       let max = 0;
       let sumSquares = 0;
       let count = 0;
 
-      for (let j = start; j < end; j++) {
-        // Average across stereo channels if available
-        let val = 0;
-        for (let c = 0; c < numChannels; c++) {
-          val += Math.abs(channelData[c][j]);
-        }
-        val = val / numChannels;
+      if (ch1) {
+        for (let j = start; j < end; j += stride) {
+          const v0 = ch0[j];
+          const v1 = ch1[j];
+          const abs0 = v0 < 0 ? -v0 : v0;
+          const abs1 = v1 < 0 ? -v1 : v1;
+          const val = (abs0 + abs1) * 0.5;
 
-        if (val > max) max = val;
-        sumSquares += val * val;
-        count++;
+          if (val > max) max = val;
+          sumSquares += val * val;
+          count++;
+        }
+      } else {
+        for (let j = start; j < end; j += stride) {
+          const v0 = ch0[j];
+          const val = v0 < 0 ? -v0 : v0;
+
+          if (val > max) max = val;
+          sumSquares += val * val;
+          count++;
+        }
       }
 
       const rms = count > 0 ? Math.sqrt(sumSquares / count) : 0;
-      peaks.push(max);
-      rmsList.push(rms);
+      peaks[i] = max;
+      rmsList[i] = rms;
       if (max > globalMax) globalMax = max;
     }
 
@@ -134,7 +161,67 @@ class AudioEngine {
       rms: normalizedRms,
       duration: buffer.duration,
       sampleRate: buffer.sampleRate,
-      channelData,
+    };
+  }
+
+  public extractWaveformData(buffer: AudioBuffer, targetSamples: number = 1000): WaveformData {
+    const numChannels = buffer.numberOfChannels;
+    const ch0 = buffer.getChannelData(0);
+    const ch1 = numChannels > 1 ? buffer.getChannelData(1) : null;
+    const totalSamples = ch0.length;
+    const blockSize = Math.max(1, Math.floor(totalSamples / targetSamples));
+    const stride = Math.max(1, Math.floor(blockSize / 48));
+
+    const peaks: number[] = new Array(targetSamples);
+    const rmsList: number[] = new Array(targetSamples);
+    let globalMax = 0;
+
+    for (let i = 0; i < targetSamples; i++) {
+      const start = i * blockSize;
+      const end = Math.min(start + blockSize, totalSamples);
+      let max = 0;
+      let sumSquares = 0;
+      let count = 0;
+
+      if (ch1) {
+        for (let j = start; j < end; j += stride) {
+          const v0 = ch0[j];
+          const v1 = ch1[j];
+          const abs0 = v0 < 0 ? -v0 : v0;
+          const abs1 = v1 < 0 ? -v1 : v1;
+          const val = (abs0 + abs1) * 0.5;
+
+          if (val > max) max = val;
+          sumSquares += val * val;
+          count++;
+        }
+      } else {
+        for (let j = start; j < end; j += stride) {
+          const v0 = ch0[j];
+          const val = v0 < 0 ? -v0 : v0;
+
+          if (val > max) max = val;
+          sumSquares += val * val;
+          count++;
+        }
+      }
+
+      const rms = count > 0 ? Math.sqrt(sumSquares / count) : 0;
+      peaks[i] = max;
+      rmsList[i] = rms;
+      if (max > globalMax) globalMax = max;
+    }
+
+    // Normalize peaks to 0..1 scale
+    const normFactor = globalMax > 0 ? 1 / globalMax : 1;
+    const normalizedPeaks = peaks.map((p) => Math.min(1, p * normFactor));
+    const normalizedRms = rmsList.map((r) => Math.min(1, r * normFactor));
+
+    return {
+      peaks: normalizedPeaks,
+      rms: normalizedRms,
+      duration: buffer.duration,
+      sampleRate: buffer.sampleRate,
     };
   }
 

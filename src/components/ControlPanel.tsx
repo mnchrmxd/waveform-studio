@@ -190,13 +190,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     {
       id: 'mirrored-bars',
       name: 'Mirrored Bars',
-      icon: <BarChart3 className="w-5 h-5 text-cyan-400" />,
+      icon: <Activity className="w-5 h-5 text-cyan-400" />,
       desc: 'Symmetric vertical frequency bars with gradient & glow',
     },
     {
       id: 'bars-up',
       name: 'Spectrum EQ',
-      icon: <Activity className="w-5 h-5 text-emerald-400" />,
+      icon: <BarChart3 className="w-5 h-5 text-emerald-400" />,
       desc: 'Upward audio frequency columns with floating peak caps',
     },
     {

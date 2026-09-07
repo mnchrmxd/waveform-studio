@@ -127,7 +127,9 @@ interface BandMapping {
 }
 
 export class OfflineAudioAnalyzer {
-  private channelData: Float32Array;
+  private ch0: Float32Array;
+  private ch1: Float32Array | null = null;
+  private audioLen: number;
   private sampleRate: number;
   private fftSize: number;
   private halfSize: number;
@@ -162,20 +164,10 @@ export class OfflineAudioAnalyzer {
     this.smoothedFrequencies = new Float32Array(128);
     this.outWaveform = new Float32Array(128);
 
-    // Merge multi-channel audio to mono once
-    const numChannels = buffer.numberOfChannels;
-    const length = buffer.length;
-    this.channelData = new Float32Array(length);
-
-    if (numChannels === 1) {
-      this.channelData.set(buffer.getChannelData(0));
-    } else {
-      const ch0 = buffer.getChannelData(0);
-      const ch1 = buffer.getChannelData(1);
-      for (let i = 0; i < length; i++) {
-        this.channelData[i] = (ch0[i] + ch1[i]) * 0.5;
-      }
-    }
+    // Instant O(1) channel references avoiding multi-megabyte heap duplication and 15M-iteration freeze
+    this.audioLen = buffer.length;
+    this.ch0 = buffer.getChannelData(0);
+    this.ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
   }
 
   private prepareBandMappings(targetBands: number): void {
@@ -225,16 +217,28 @@ export class OfflineAudioAnalyzer {
   }
 
   private computeRawBandsAtSample(startSample: number, targetBands: number, dest: Float32Array): number {
-    const audioLen = this.channelData.length;
+    const audioLen = this.audioLen;
+    const ch0 = this.ch0;
+    const ch1 = this.ch1;
     const fftSize = this.fftSize;
     let sumSquares = 0;
 
-    for (let i = 0; i < fftSize; i++) {
-      const idx = startSample + i;
-      const sample = idx >= 0 && idx < audioLen ? this.channelData[idx] : 0;
-      this.realBuf[i] = sample * this.hann[i];
-      this.imagBuf[i] = 0;
-      sumSquares += sample * sample;
+    if (ch1) {
+      for (let i = 0; i < fftSize; i++) {
+        const idx = startSample + i;
+        const sample = (idx >= 0 && idx < audioLen) ? (ch0[idx] + ch1[idx]) * 0.5 : 0;
+        this.realBuf[i] = sample * this.hann[i];
+        this.imagBuf[i] = 0;
+        sumSquares += sample * sample;
+      }
+    } else {
+      for (let i = 0; i < fftSize; i++) {
+        const idx = startSample + i;
+        const sample = (idx >= 0 && idx < audioLen) ? ch0[idx] : 0;
+        this.realBuf[i] = sample * this.hann[i];
+        this.imagBuf[i] = 0;
+        sumSquares += sample * sample;
+      }
     }
 
     computeFFTFast(this.realBuf, this.imagBuf);
@@ -306,14 +310,25 @@ export class OfflineAudioAnalyzer {
 
     const centerSample = Math.floor(timeSeconds * this.sampleRate);
     const startSample = centerSample - this.halfSize;
-    const audioLen = this.channelData.length;
+    const audioLen = this.audioLen;
+    const ch0 = this.ch0;
+    const ch1 = this.ch1;
     const fftSize = this.fftSize;
 
     // Time domain waveform downsampled
     const waveStep = fftSize / targetBands;
-    for (let i = 0; i < targetBands; i++) {
-      const sampleIdx = startSample + Math.floor(i * waveStep);
-      this.outWaveform[i] = sampleIdx >= 0 && sampleIdx < audioLen ? this.channelData[sampleIdx] : 0;
+    if (ch1) {
+      for (let i = 0; i < targetBands; i++) {
+        const sampleIdx = startSample + Math.floor(i * waveStep);
+        this.outWaveform[i] = (sampleIdx >= 0 && sampleIdx < audioLen)
+          ? (ch0[sampleIdx] + ch1[sampleIdx]) * 0.5
+          : 0;
+      }
+    } else {
+      for (let i = 0; i < targetBands; i++) {
+        const sampleIdx = startSample + Math.floor(i * waveStep);
+        this.outWaveform[i] = (sampleIdx >= 0 && sampleIdx < audioLen) ? ch0[sampleIdx] : 0;
+      }
     }
 
     // Compute instantaneous raw FFT

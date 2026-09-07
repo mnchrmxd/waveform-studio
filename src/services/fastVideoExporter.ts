@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { OfflineAudioAnalyzer } from './fftAnalyzer';
 import { renderVisualizerFrame } from './visualizerRenderer';
+import { checkCloudAvailability } from './cloudDetection';
 
 export type ExportResolution = '720p' | '1080p' | '4k' | 'custom';
 export type ExportFormat = 'mp4' | 'webm' | 'webm-alpha' | 'png-sequence';
@@ -352,10 +353,34 @@ export class FastHeadlessVideoExporter {
     }
 
     // If browser does not support WebCodecs alpha (e.g. mobile Safari / Chrome Android),
-    // use Server-Side Headless rendering (FFmpeg libvpx-vp9 -pix_fmt yuva420p) for true 60fps/30fps offline encoding!
+    // use Server-Side Headless rendering (FFmpeg libvpx-vp9 -pix_fmt yuva420p) if cloud is available,
+    // otherwise fallback immediately to in-browser MediaRecorder alpha rendering!
     if (isAlphaExport && !supportedAlphaConfig) {
+      const isCloud = await checkCloudAvailability();
+      if (isCloud) {
+        try {
+          return await this.exportViaServerHeadless(
+            audioBuffer,
+            waveformData,
+            config,
+            width,
+            height,
+            fps,
+            trimStart,
+            trimEnd,
+            duration,
+            onProgress
+          );
+        } catch (err: any) {
+          if (signal.aborted) {
+            throw new Error('Export canceled by user.');
+          }
+          console.warn('Server headless alpha render failed, attempting in-browser MediaRecorder fallback:', err);
+        }
+      }
+
       try {
-        return await this.exportViaServerHeadless(
+        return await this.exportViaMediaRecorder(
           audioBuffer,
           waveformData,
           config,
@@ -367,9 +392,12 @@ export class FastHeadlessVideoExporter {
           duration,
           onProgress
         );
-      } catch (err: any) {
-        console.warn('Server headless alpha render failed, falling back to PNG sequence (.zip):', err);
-        return this.exportPngSequence(audioBuffer, waveformData, config, onProgress);
+      } catch (mediaErr: any) {
+        if (signal.aborted) {
+          throw new Error('Export canceled by user.');
+        }
+        console.warn('MediaRecorder alpha export failed:', mediaErr);
+        throw new Error(`Transparent WebM export failed: ${mediaErr?.message || 'Unsupported in this environment'}`);
       }
     }
 
@@ -944,6 +972,7 @@ export class FastHeadlessVideoExporter {
         'x-job-id': jobId,
       },
       body: JSON.stringify(payload),
+      signal: this.abortController?.signal,
     });
 
     if (sse) {

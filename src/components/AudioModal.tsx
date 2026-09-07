@@ -69,7 +69,10 @@ export const AudioModal: React.FC<AudioModalProps> = ({
 
   // Drag & drop state
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isBusy = isLoading || isProcessing;
 
   // Microphone state
   const [isRecording, setIsRecording] = useState(false);
@@ -110,11 +113,17 @@ export const AudioModal: React.FC<AudioModalProps> = ({
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    if (isBusy) return;
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|flac|m4a|aac)$/i.test(file.name)) {
-        await onFileUpload(file);
-        onClose();
+        setIsProcessing(true);
+        try {
+          await onFileUpload(file);
+          onClose();
+        } finally {
+          setIsProcessing(false);
+        }
       } else {
         alert('Please drop a valid audio file (.mp3, .wav, .flac, .ogg, .m4a).');
       }
@@ -122,10 +131,19 @@ export const AudioModal: React.FC<AudioModalProps> = ({
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isBusy) return;
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      await onFileUpload(file);
-      onClose();
+      setIsProcessing(true);
+      try {
+        await onFileUpload(file);
+        onClose();
+      } finally {
+        setIsProcessing(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
     }
   };
 
@@ -274,38 +292,52 @@ export const AudioModal: React.FC<AudioModalProps> = ({
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
-                  setIsDragOver(true);
+                  if (!isBusy) setIsDragOver(true);
                 }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 transition-all cursor-pointer text-center ${
-                  isDragOver
-                    ? 'border-cyan-400 bg-cyan-500/10'
-                    : 'border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/70'
+                onClick={() => {
+                  if (!isBusy) fileInputRef.current?.click();
+                }}
+                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 transition-all text-center ${
+                  isBusy
+                    ? 'border-cyan-500/50 bg-cyan-950/20 cursor-wait'
+                    : isDragOver
+                    ? 'border-cyan-400 bg-cyan-500/10 cursor-pointer'
+                    : 'border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/70 cursor-pointer'
                 }`}
               >
-                <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
-                  <Upload className="w-6 h-6" />
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                  isBusy ? 'bg-cyan-500/20 text-cyan-400 animate-pulse' : 'bg-cyan-500/20 text-cyan-400'
+                }`}>
+                  {isBusy ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Upload className="w-6 h-6" />}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-sm text-white">Click or drag audio file here</span>
-                  <span className="text-xs text-neutral-400">Supports MP3, WAV, FLAC, OGG, M4A, AAC up to 100MB</span>
+                  <span className="font-semibold text-sm text-white">
+                    {isBusy ? 'Analyzing & Decoding Audio...' : 'Click or drag audio file here'}
+                  </span>
+                  <span className="text-xs text-neutral-400">
+                    {isBusy
+                      ? 'Extracting high-precision waveform envelopes & frequencies'
+                      : 'Supports MP3, WAV, FLAC, OGG, M4A, AAC up to 100MB'}
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 mt-2">
-                  {['MP3', 'WAV', 'FLAC', 'OGG', 'M4A'].map((fmt) => (
-                    <span key={fmt} className="px-2 py-0.5 rounded bg-neutral-800 text-[10px] font-mono text-neutral-300 border border-neutral-700">
-                      {fmt}
-                    </span>
-                  ))}
-                </div>
+                {!isBusy && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    {['MP3', 'WAV', 'FLAC', 'OGG', 'M4A'].map((fmt) => (
+                      <span key={fmt} className="px-2 py-0.5 rounded bg-neutral-800 text-[10px] font-mono text-neutral-300 border border-neutral-700">
+                        {fmt}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {isLoading && (
-                <div className="flex items-center justify-center gap-2 p-3 bg-cyan-950/40 border border-cyan-800/40 rounded-xl text-xs text-cyan-300">
+              {isBusy && (
+                <div className="flex items-center justify-center gap-2 p-3 bg-cyan-950/40 border border-cyan-800/40 rounded-xl text-xs text-cyan-300 animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Decoding audio data into high-resolution waveforms...</span>
+                  <span>Decoding audio buffer into high-resolution waveforms...</span>
                 </div>
               )}
             </div>

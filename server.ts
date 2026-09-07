@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { renderHeadlessVideo, HeadlessVideoOptions } from './src/server/headlessRenderer';
+import { renderHeadlessVideo, HeadlessVideoOptions, getFfmpegPath } from './src/server/headlessRenderer';
 import { DEFAULT_SETTINGS, COLOR_THEMES } from './src/data/presets';
 
 async function startServer() {
@@ -23,6 +23,8 @@ async function startServer() {
         mp4Export: true,
         transparentAlphaWebm: true,
         fftAnalyzer: true,
+        ffmpegSource: 'npm (ffmpeg-static)',
+        ffmpegBinary: getFfmpegPath(),
       },
       timestamp: new Date().toISOString(),
     });
@@ -458,6 +460,7 @@ async function startServer() {
   };
 
   app.post('/api/render-video', handleRenderVideo);
+  app.post('/api/render-headless', handleRenderVideo);
   app.post('/api/generate-video', handleRenderVideo);
 
   // Vite middleware setup

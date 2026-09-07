@@ -183,9 +183,12 @@ The side panel gives you granular control over every aspect of the animation:
 
 ### Rendering in Browser (Studio UI)
 1. Click **Export Video** in the top navigation header.
-2. Choose your resolution (`720p`, `1080p Full HD`, `4K UHD`), frame rate (`30fps` or `60fps`), and format (`MP4` or `WebM`).
-3. Toggle **Transparent Background** if you plan to overlay the video in Premiere Pro, DaVinci Resolve, or OBS.
-4. Click **Render Video (WebCodecs)**. The export engine automatically handles backpressure pacing and quality latency modes to ensure 100% stable framerates without frame drops on both desktop and mobile devices.
+2. Select your **Engine**:
+   - **Client GPU** (Fast in-browser rendering via WebCodecs / MediaRecorder). Works completely client-side in any browser or static hosting environment without requiring a backend server.
+   - **Cloud Server** (Zero client RAM, headless rendering using Node.js and FFmpeg). Automatically disabled with visual notice when running in client-only or static environments where a Node.js backend is not detected.
+3. Choose your resolution (`720p`, `1080p Full HD`, `4K UHD`), frame rate (`30fps` or `60fps`), and format (`MP4` or `WebM`).
+4. Toggle **Transparent Background** if you plan to overlay the video in Premiere Pro, DaVinci Resolve, or OBS.
+5. Click **Render Video**. The export engine automatically handles backpressure pacing and quality latency modes to ensure 100% stable framerates without frame drops on both desktop and mobile devices.
 
 ### Unified Export & Webpage Renderer
 - Export Video and the Webpage Renderer are completely unified into one seamless workflow.
@@ -288,9 +291,9 @@ data: {
 
 ---
 
-### `POST /api/render-video` (Direct Headless)
+### `POST /api/render-video` (or `POST /api/render-headless`) (Direct Headless)
 
-Direct synchronous headless video rendering via Node.js Canvas and FFmpeg. Enhanced with FFmpeg's `ultrafast` preset to minimize CPU bottlenecks on Colab and cloud instances.
+Direct synchronous headless video rendering via Node.js Canvas and FFmpeg (`ffmpeg-static`). Supports standard MP4 (H.264) as well as transparent WebM with full alpha channel (`libvpx-vp9` with `yuva420p` pixel format). Enhanced with FFmpeg's `ultrafast` / `realtime` presets to minimize CPU bottlenecks on Colab and cloud instances.
 
 #### Request Headers
 - `Content-Type: application/json`

@@ -30,6 +30,7 @@ import {
 } from '../services/fastVideoExporter';
 import { ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { PayloadGeneratorModal } from './PayloadGeneratorModal';
+import { useCloudStatus } from '../services/cloudDetection';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -122,6 +123,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   }, [isOpen, settings.showTrackInfo, settings.showProfileImage, settings.showDbGrid, settings.backgroundType]);
 
+  const { isCloudAvailable } = useCloudStatus();
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -130,12 +132,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const serverAbortRef = React.useRef<AbortController | null>(null);
   const serverSseRef = React.useRef<EventSource | null>(null);
 
+  // If cloud becomes unavailable, automatically fallback to client engine
+  useEffect(() => {
+    if (!isCloudAvailable && renderEngine === 'server') {
+      setRenderEngine('client');
+    }
+  }, [isCloudAvailable, renderEngine]);
+
   useEffect(() => {
     if (isOpen) {
       setExportResult(null);
       setProgress(null);
       setErrorMessage(null);
       setIsExporting(false);
+      if (!isCloudAvailable) {
+        setRenderEngine('client');
+      }
       const isInitialAlpha = settings.backgroundType === 'transparent';
       setExportAlpha(isInitialAlpha);
       if (isInitialAlpha) {
@@ -437,7 +449,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (!audioBuffer) return;
 
     if (renderEngine === 'server') {
-      return handleServerExport();
+      if (!isCloudAvailable) {
+        setRenderEngine('client');
+      } else {
+        return handleServerExport();
+      }
     }
 
     setIsExporting(true);
@@ -692,22 +708,60 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <button
                     id="engine-server-btn"
                     type="button"
-                    onClick={() => setRenderEngine('server')}
-                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                      renderEngine === 'server'
-                        ? 'bg-neutral-900 border-blue-400 ring-2 ring-blue-500/20 text-white'
-                        : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    disabled={!isCloudAvailable}
+                    onClick={() => {
+                      if (isCloudAvailable) {
+                        setRenderEngine('server');
+                      }
+                    }}
+                    title={
+                      !isCloudAvailable
+                        ? 'Node.js cloud server is not available in this environment'
+                        : 'Render headlessly on the cloud server'
+                    }
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      !isCloudAvailable
+                        ? 'bg-neutral-900/20 border-neutral-800/40 text-neutral-600 cursor-not-allowed opacity-50'
+                        : renderEngine === 'server'
+                        ? 'bg-neutral-900 border-blue-400 ring-2 ring-blue-500/20 text-white cursor-pointer'
+                        : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <Cloud className={`w-4 h-4 ${renderEngine === 'server' ? 'text-blue-400' : 'text-neutral-500'}`} />
-                      <span className="font-semibold text-xs text-white">Cloud Server</span>
+                      <Cloud
+                        className={`w-4 h-4 ${
+                          !isCloudAvailable
+                            ? 'text-neutral-600'
+                            : renderEngine === 'server'
+                            ? 'text-blue-400'
+                            : 'text-neutral-500'
+                        }`}
+                      />
+                      <span
+                        className={`font-semibold text-xs ${
+                          !isCloudAvailable ? 'text-neutral-500' : 'text-white'
+                        }`}
+                      >
+                        Cloud Server
+                      </span>
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/60">
-                      Zero RAM
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                        !isCloudAvailable
+                          ? 'bg-neutral-900/80 text-neutral-500 border-neutral-800/60'
+                          : 'bg-blue-950/80 text-blue-300 border-blue-800/60'
+                      }`}
+                    >
+                      {!isCloudAvailable ? 'Unavailable' : 'Zero RAM'}
                     </span>
                   </button>
                 </div>
+                {!isCloudAvailable && (
+                  <div className="flex items-center gap-1.5 px-0.5 pt-0.5 text-[11px] text-neutral-500">
+                    <Info className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                    <span>No Node.js environment detected. Cloud rendering is disabled.</span>
+                  </div>
+                )}
               </div>
 
               {/* Alpha Transparency Toggle Card */}
@@ -986,7 +1040,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     </div>
                   </div>
 
-                  {renderEngine === 'client' && (
+                  {renderEngine === 'client' && isCloudAvailable && (
                     <div className="pt-1 flex items-center justify-between gap-3 border-t border-rose-500/20">
                       <span className="text-[11px] text-rose-300/80">
                         Browser memory exhausted or GPU driver reset?
@@ -1081,11 +1135,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <span className="font-mono text-xs font-semibold text-white">
                       {progress.fps > 0 ? `${progress.fps} FPS` : '—'}
                     </span>
-                    {progress.speedMultiplier && (
-                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/50">
-                        {progress.speedMultiplier}x
-                      </span>
-                    )}
                   </div>
                 </div>
 

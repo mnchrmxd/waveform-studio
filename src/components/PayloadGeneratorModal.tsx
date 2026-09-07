@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ColorTheme, VisualizerSettings } from '../types';
 import { audioBufferToWavBlob } from '../services/fastVideoExporter';
+import { useCloudStatus } from '../services/cloudDetection';
 
 export interface ExportConfiguration {
   width: number;
@@ -61,6 +62,7 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
   backgroundVideoUrl,
 }) => {
   // The user requested NO MORE EDITS beyond the format (cURL, JSON, Node)
+  const { isCloudAvailable } = useCloudStatus();
   const [activeFormat, setActiveFormat] = useState<'curl' | 'json' | 'node'>('curl');
   const [copied, setCopied] = useState(false);
   const [isServerRendering, setIsServerRendering] = useState(false);
@@ -732,9 +734,13 @@ renderVisualizer().catch(console.error);`;
             <button
               id="test-server-render-btn"
               onClick={handleServerTestRun}
-              disabled={isServerRendering || isPreparingAssets}
+              disabled={isServerRendering || isPreparingAssets || !isCloudAvailable}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Executes the POST request against local FFmpeg backend right now"
+              title={
+                !isCloudAvailable
+                  ? 'Node.js backend server is not available in this environment'
+                  : 'Executes the POST request against local FFmpeg backend right now'
+              }
             >
               {isServerRendering ? (
                 <>
@@ -744,7 +750,7 @@ renderVisualizer().catch(console.error);`;
               ) : (
                 <>
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Test Run on Server</span>
+                  <span>{isCloudAvailable ? 'Test Run on Server' : 'Server Unavailable'}</span>
                 </>
               )}
             </button>

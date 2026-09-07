@@ -140,7 +140,7 @@ export interface WaveformData {
   rms: number[];
   duration: number;
   sampleRate: number;
-  channelData: Float32Array[];
+  channelData?: Float32Array[];
 }
 
 export interface SampleAudioPreset {

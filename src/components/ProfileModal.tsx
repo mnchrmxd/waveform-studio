@@ -14,7 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ProfileImageShape, VisualizerSettings } from '../types';
-import { loadImageFromUrl } from '../utils/imageLoader';
+import { loadImageFromUrl, loadOptimizedImage } from '../utils/imageLoader';
 import { loadDefaultAvatarImage } from '../utils/defaultAvatar';
 
 interface ProfileModalProps {
@@ -116,26 +116,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     onSettingsChange({ showProfileImage: false });
   };
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setIsLoading(true);
     setErrorMsg(null);
-    const imgUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = imgUrl;
-
-    img.onload = () => {
+    try {
+      const { image, url } = await loadOptimizedImage(file, 512);
       setIsLoading(false);
-      onProfileImageUpload(img);
+      onProfileImageUpload(image);
       onProfileImageUrlChange?.(null);
       onSettingsChange({ showProfileImage: true });
       onClose();
-    };
-
-    img.onerror = () => {
+    } catch {
       setIsLoading(false);
       setErrorMsg('Failed to decode image file. Please check format (JPG, PNG, WebP).');
-    };
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -161,9 +155,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const img = await loadImageFromUrl(cleanUrl);
+      const { image, url } = await loadOptimizedImage(cleanUrl, 512);
       setIsLoading(false);
-      onProfileImageUpload(img);
+      onProfileImageUpload(image);
       onProfileImageUrlChange?.(cleanUrl);
       onSettingsChange({ showProfileImage: true });
       onClose();

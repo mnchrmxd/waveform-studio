@@ -14,7 +14,7 @@ import {
   Sliders,
   Video,
 } from 'lucide-react';
-import { loadImageFromUrl } from '../utils/imageLoader';
+import { loadImageFromUrl, loadOptimizedImage } from '../utils/imageLoader';
 
 interface BackgroundModalProps {
   isOpen: boolean;
@@ -163,25 +163,19 @@ export const BackgroundModal: React.FC<BackgroundModalProps> = ({
     };
   };
 
-  const processImageFile = (file: File) => {
+  const processImageFile = async (file: File) => {
     setIsLoading(true);
     setMediaError(null);
-    const imgUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = imgUrl;
-
-    img.onload = () => {
+    try {
+      const { image, url } = await loadOptimizedImage(file, 2560);
       setIsLoading(false);
-      onBackgroundImageUpload(img, imgUrl);
+      onBackgroundImageUpload(image, url);
       onBackgroundVideoUpload(null, null); // Clear video
       onClose();
-    };
-
-    img.onerror = () => {
+    } catch {
       setIsLoading(false);
       setMediaError('Failed to load image file. Please check file integrity.');
-    };
+    }
   };
 
   // Automatic media detection on file upload (Image OR Video)
@@ -247,9 +241,9 @@ export const BackgroundModal: React.FC<BackgroundModalProps> = ({
     } else {
       // Try image first, fallback to video if image fails
       try {
-        const img = await loadImageFromUrl(cleanUrl);
+        const { image, url } = await loadOptimizedImage(cleanUrl, 2560);
         setIsLoading(false);
-        onBackgroundImageUpload(img, cleanUrl);
+        onBackgroundImageUpload(image, url);
         onBackgroundVideoUpload(null, null);
         onClose();
       } catch (imgErr) {
@@ -293,13 +287,18 @@ export const BackgroundModal: React.FC<BackgroundModalProps> = ({
         onClose();
       };
     } else {
-      loadImageFromUrl(preset.url).then((img) => {
-        onBackgroundImageUpload(img, preset.url);
-        onBackgroundVideoUpload(null, null);
-        onClose();
-      }).catch((err) => {
-        setMediaError(err?.message || 'Failed to load preset');
-      });
+      setIsLoading(true);
+      loadOptimizedImage(preset.url, 2560)
+        .then(({ image, url }) => {
+          setIsLoading(false);
+          onBackgroundImageUpload(image, url);
+          onBackgroundVideoUpload(null, null);
+          onClose();
+        })
+        .catch((err) => {
+          setIsLoading(false);
+          setMediaError(err?.message || 'Failed to load preset');
+        });
     }
   };
 

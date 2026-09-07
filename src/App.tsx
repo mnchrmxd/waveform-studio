@@ -131,6 +131,7 @@ export default function App() {
   // Audio loading handlers
   const handleFileUpload = async (file: File) => {
     setIsLoadingAudio(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
     try {
       if (isPlaying) {
         audioEngine.pause();

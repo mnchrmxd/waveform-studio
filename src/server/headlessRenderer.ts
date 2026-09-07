@@ -2,11 +2,26 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
+import ffmpegStatic from 'ffmpeg-static';
 import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
 import { ColorTheme, VisualizerSettings } from '../types';
 import { DEFAULT_SETTINGS, COLOR_THEMES } from '../data/presets';
 import { OfflineAudioAnalyzer } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
+
+/**
+ * Resolves the FFmpeg binary provided by npm package 'ffmpeg-static',
+ * falling back to system 'ffmpeg' if unavailable.
+ */
+export function getFfmpegPath(): string {
+  const binaryPath = typeof ffmpegStatic === 'string'
+    ? ffmpegStatic
+    : (ffmpegStatic as any)?.default;
+  if (typeof binaryPath === 'string' && fs.existsSync(binaryPath)) {
+    return binaryPath;
+  }
+  return 'ffmpeg';
+}
 
 // Polyfill OffscreenCanvas for Node.js if not present
 if (typeof (globalThis as any).OffscreenCanvas === 'undefined') {
@@ -109,7 +124,7 @@ async function prepareAudioFile(
   // Case 3: No audio provided -> Synthesize a demo harmonic chord via FFmpeg
   const synthPath = path.join(tempDir, 'synth_audio.wav');
   await new Promise<void>((resolve, reject) => {
-    const ffmpegSynth = spawn('ffmpeg', [
+    const ffmpegSynth = spawn(getFfmpegPath(), [
       '-y',
       '-f', 'lavfi',
       '-i', 'sine=frequency=220:duration=12[a];sine=frequency=330:duration=12[b];sine=frequency=440:duration=12[c];sine=frequency=660:duration=12[d];[a][b][c][d]amix=inputs=4',
@@ -173,7 +188,7 @@ export async function renderHeadlessVideo(
     // 2. Decode Audio into Raw 32-bit Float PCM via FFmpeg
     const pcmPath = path.join(tempDir, 'audio.raw');
     await new Promise<void>((resolve, reject) => {
-      const decodeProc = spawn('ffmpeg', [
+      const decodeProc = spawn(getFfmpegPath(), [
         '-y',
         '-i', audioInputPath,
         '-f', 'f32le',
@@ -332,7 +347,7 @@ export async function renderHeadlessVideo(
       );
     }
 
-    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+    const ffmpeg = spawn(getFfmpegPath(), ffmpegArgs);
     let ffmpegStderr = '';
     ffmpeg.stderr.on('data', (data) => {
       ffmpegStderr += data.toString();
