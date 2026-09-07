@@ -575,17 +575,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-3xl bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-900/60">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800 bg-neutral-900/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-cyan-500/20">
-              <Zap className="w-4 h-4 fill-current" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-cyan-500/20">
+              <Zap className="w-3.5 h-3.5 fill-current" />
             </div>
-            <div>
-              <h2 className="font-display font-bold text-base text-white">Video & Alpha Export Studio</h2>
-              <p className="text-xs text-neutral-400">
-                Hardware-accelerated MP4, WebM Alpha, and Headless REST API video generation
-              </p>
-            </div>
+            <h2 className="font-display font-bold text-sm text-white">Export Video</h2>
           </div>
 
           <div className="flex items-center gap-2">
@@ -599,10 +594,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   ? 'bg-neutral-800 border-cyan-500/60 text-cyan-300 shadow-sm'
                   : 'bg-neutral-900/80 border-neutral-800 text-neutral-400 hover:text-neutral-200'
               }`}
-              title="Toggle live execution debug terminal"
+              title="Toggle debug terminal"
             >
               <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Debug Mode</span>
+              <span>Debug</span>
             </button>
 
             {!isExporting && (
@@ -669,39 +664,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {/* Configuration Form */}
           {!isExporting && !exportResult && (
             <>
-              {/* Architecture Engine Selector */}
+              {/* Engine Selector */}
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
-                    <span>Rendering Engine Architecture</span>
-                  </label>
-                  <span className="text-[11px] font-mono text-neutral-400">
-                    {renderEngine === 'client' ? 'Client WebCodecs' : 'Cloud Server FFmpeg'}
-                  </span>
-                </div>
-
+                <label className="text-xs font-semibold text-neutral-300">
+                  Engine
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     id="engine-client-btn"
                     type="button"
                     onClick={() => setRenderEngine('client')}
-                    className={`p-3 rounded-xl border text-left flex flex-col gap-1.5 transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
                       renderEngine === 'client'
                         ? 'bg-neutral-900 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
                         : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Cpu className={`w-4 h-4 ${renderEngine === 'client' ? 'text-cyan-400' : 'text-neutral-500'}`} />
-                        <span className="font-bold text-xs text-white">Client GPU (Fast)</span>
-                      </div>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-                        Hardware Accel
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Cpu className={`w-4 h-4 ${renderEngine === 'client' ? 'text-cyan-400' : 'text-neutral-500'}`} />
+                      <span className="font-semibold text-xs text-white">Client GPU</span>
                     </div>
-                    <span className="text-[11px] text-neutral-400 leading-relaxed">
-                      In-browser WebCodecs pipeline with bounded memory queues. Instant start with 0 network upload.
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
+                      Fast
                     </span>
                   </button>
 
@@ -709,23 +693,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     id="engine-server-btn"
                     type="button"
                     onClick={() => setRenderEngine('server')}
-                    className={`p-3 rounded-xl border text-left flex flex-col gap-1.5 transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
                       renderEngine === 'server'
                         ? 'bg-neutral-900 border-blue-400 ring-2 ring-blue-500/20 text-white'
                         : 'bg-neutral-900/40 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Cloud className={`w-4 h-4 ${renderEngine === 'server' ? 'text-blue-400' : 'text-neutral-500'}`} />
-                        <span className="font-bold text-xs text-white">Cloud Server (Zero RAM)</span>
-                      </div>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
-                        Crash Immune
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Cloud className={`w-4 h-4 ${renderEngine === 'server' ? 'text-blue-400' : 'text-neutral-500'}`} />
+                      <span className="font-semibold text-xs text-white">Cloud Server</span>
                     </div>
-                    <span className="text-[11px] text-neutral-400 leading-relaxed">
-                      Offloads rendering to background server FFmpeg. 0% browser memory footprint, never crashes the tab.
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/60">
+                      Zero RAM
                     </span>
                   </button>
                 </div>
@@ -735,44 +714,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div
                 id="toggle-alpha-export-card"
                 onClick={handleToggleAlpha}
-                className={`p-3.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-2.5 px-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
                   exportAlpha
                     ? 'bg-neutral-900 border-cyan-400/80 ring-2 ring-cyan-500/20 shadow-md shadow-cyan-500/10'
                     : 'bg-neutral-900/50 border-neutral-800 hover:border-neutral-700'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                       exportAlpha
                         ? 'transparency-checkerboard border border-cyan-400 text-cyan-300 shadow-sm'
                         : 'bg-neutral-800 text-neutral-400'
                     }`}
                   >
-                    <Layers className="w-5 h-5" />
+                    <Layers className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="text-xs font-bold text-white flex items-center gap-2">
-                      <span>Transparent Background (Alpha Channel)</span>
-                      {exportAlpha && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/40">
-                          ALPHA ACTIVE
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-neutral-400">
-                      Renders transparent overlay for Premiere Pro, DaVinci Resolve, Final Cut & OBS
-                    </div>
-                  </div>
+                  <span className="text-xs font-semibold text-white">
+                    Transparent Background (Alpha)
+                  </span>
                 </div>
 
                 <div
-                  className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 ${
+                  className={`w-10 h-5 rounded-full p-0.5 transition-colors shrink-0 ${
                     exportAlpha ? 'bg-cyan-500' : 'bg-neutral-800'
                   }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                    className={`w-4 h-4 rounded-full bg-white transition-transform ${
                       exportAlpha ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
@@ -781,57 +750,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
               {/* Format Selection based on Alpha state */}
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-neutral-300">
-                    Export Output Format
-                  </label>
-                  {exportAlpha && (
-                    <span className="text-[11px] font-mono text-cyan-400">
-                      Alpha Transparency Enabled
-                    </span>
-                  )}
-                </div>
-
+                <label className="text-xs font-semibold text-neutral-300">Format</label>
                 {exportAlpha ? (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       id="format-webm-alpha-btn"
                       onClick={() => setFormat('webm-alpha')}
-                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center font-semibold text-xs transition-all cursor-pointer ${
                         format === 'webm-alpha'
                           ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
                           : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white">WebM Video (Alpha)</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-                          Direct Video
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-neutral-400">
-                        Single video file with embedded alpha. Plays transparently in OBS & web browsers.
-                      </span>
+                      WebM (Alpha)
                     </button>
-
                     <button
                       id="format-png-sequence-btn"
                       onClick={() => setFormat('png-sequence')}
-                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center font-semibold text-xs transition-all cursor-pointer ${
                         format === 'png-sequence'
                           ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
                           : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white">PNG Sequence (.zip)</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
-                          Universal NLE
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-neutral-400">
-                        100% Lossless RGBA frames + audio.wav. Native import in Premiere, DaVinci & Final Cut.
-                      </span>
+                      PNG Sequence (.zip)
                     </button>
                   </div>
                 ) : (
@@ -839,41 +781,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <button
                       id="format-mp4-btn"
                       onClick={() => setFormat('mp4')}
-                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center font-semibold text-xs transition-all cursor-pointer ${
                         format === 'mp4'
                           ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
                           : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white">MP4 (H.264)</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800">
-                          Universal
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-neutral-400">
-                        Compatible with YouTube, Instagram, TikTok, smartphones, and all video players.
-                      </span>
+                      MP4 (H.264)
                     </button>
-
                     <button
                       id="format-webm-btn"
                       onClick={() => setFormat('webm')}
-                      className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center font-semibold text-xs transition-all cursor-pointer ${
                         format === 'webm'
                           ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20 text-white'
                           : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white">WebM (VP9)</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800">
-                          Modern Web
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-neutral-400">
-                        High-efficiency open web video format with superior compression.
-                      </span>
+                      WebM (VP9)
                     </button>
                   </div>
                 )}
@@ -884,23 +809,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-neutral-300">Resolution</label>
                   <div className="grid grid-cols-3 gap-1.5">
-                    {[
-                      { id: '720p', label: '720p', desc: 'Fast' },
-                      { id: '1080p', label: '1080p', desc: 'Crisp' },
-                      { id: '4k', label: '4K', desc: 'Ultra' },
-                    ].map((res) => (
+                    {['720p', '1080p', '4k'].map((res) => (
                       <button
-                        key={res.id}
-                        id={`resolution-btn-${res.id}`}
-                        onClick={() => setResolution(res.id as ExportResolution)}
-                        className={`py-2 px-1.5 rounded-xl border text-center flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
-                          resolution === res.id
-                            ? 'bg-neutral-800 border-cyan-400 ring-2 ring-cyan-500/20'
+                        key={res}
+                        id={`resolution-btn-${res}`}
+                        onClick={() => setResolution(res as ExportResolution)}
+                        className={`py-2 px-1 rounded-xl border text-center text-xs font-semibold transition-all cursor-pointer ${
+                          resolution === res
+                            ? 'bg-neutral-800 border-cyan-400 text-white ring-2 ring-cyan-500/20'
                             : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                         }`}
                       >
-                        <span className="font-semibold text-xs text-white">{res.label}</span>
-                        <span className="text-[9px] text-neutral-400">{res.desc}</span>
+                        {res.toUpperCase()}
                       </button>
                     ))}
                   </div>
@@ -908,14 +828,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-neutral-300">Aspect Ratio</label>
-                  <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800 text-xs font-mono text-cyan-400 flex items-center justify-between h-[52px]">
+                  <div className="p-2 px-3 bg-neutral-900 rounded-xl border border-neutral-800 text-xs font-mono text-cyan-400 flex items-center justify-between h-[38px]">
                     <span className="font-semibold">{settings.aspectRatio}</span>
                     <span className="text-[11px] text-neutral-400 font-sans">
                       {settings.aspectRatio === '9:16'
-                        ? 'TikTok/Reels'
+                        ? 'Vertical'
                         : settings.aspectRatio === '1:1'
-                        ? 'Instagram'
-                        : 'Landscape 16:9'}
+                        ? 'Square'
+                        : 'Landscape'}
                     </span>
                   </div>
                 </div>
@@ -925,28 +845,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-neutral-300">Frame Rate</label>
-                  <div className="flex items-center gap-2 p-1 bg-neutral-900 rounded-xl border border-neutral-800">
+                  <div className="flex items-center gap-1.5 p-1 bg-neutral-900 rounded-xl border border-neutral-800 h-[38px]">
                     <button
                       id="fps-60-btn"
                       onClick={() => setFps(60)}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      className={`flex-1 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                         fps === 60
                           ? 'bg-neutral-800 text-cyan-400 border border-neutral-700 shadow-sm font-bold'
                           : 'text-neutral-400 hover:text-white'
                       }`}
                     >
-                      60 FPS (Fluid)
+                      60 FPS
                     </button>
                     <button
                       id="fps-30-btn"
                       onClick={() => setFps(30)}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                      className={`flex-1 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                         fps === 30
                           ? 'bg-neutral-800 text-cyan-400 border border-neutral-700 shadow-sm font-bold'
                           : 'text-neutral-400 hover:text-white'
                       }`}
                     >
-                      30 FPS <span className="text-[10px] text-amber-400 font-mono ml-1">⚡ 2x Faster</span>
+                      30 FPS
                     </button>
                   </div>
                 </div>
@@ -957,42 +877,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     id="video-bitrate-select"
                     value={videoBitrate}
                     onChange={(e) => setVideoBitrate(parseInt(e.target.value))}
-                    className="p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white focus:border-cyan-500 focus:outline-none cursor-pointer"
+                    className="p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white focus:border-cyan-500 focus:outline-none cursor-pointer h-[38px]"
                   >
-                    <option value={4_000_000}>4 Mbps (Compact)</option>
-                    <option value={8_000_000}>8 Mbps (High Quality)</option>
-                    <option value={16_000_000}>16 Mbps (Mastering)</option>
+                    <option value={4_000_000}>4 Mbps</option>
+                    <option value={8_000_000}>8 Mbps</option>
+                    <option value={16_000_000}>16 Mbps</option>
                   </select>
                 </div>
               </div>
 
-              {/* Full Audio Track Indicator */}
-              <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-cyan-400" />
-                  <span className="font-medium text-neutral-300">Audio Track Length:</span>
-                  <span className="font-mono text-white">{formatTime(duration)}</span>
-                </div>
-                <span className="text-neutral-400 text-[11px] font-medium px-2 py-0.5 rounded bg-neutral-800/80 border border-neutral-700/60">
-                  Full Track
-                </span>
-              </div>
-
-              {/* Visual Overlays & Elements in Export */}
-              <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-neutral-300">Visual Overlays & Elements</span>
-                  <span className="text-[11px] text-neutral-500">Toggle export components</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {/* Track Info Overlay Toggle */}
+              {/* Visual Overlays */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-neutral-300">Visual Overlays</label>
+                <div className="grid grid-cols-3 gap-2">
                   <label
                     id="export-toggle-track-info"
-                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                    className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
                       effectiveTrackInfo
                         ? 'bg-indigo-950/40 border-indigo-500/50 text-indigo-200'
-                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 truncate mr-1">
@@ -1011,13 +914,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     />
                   </label>
 
-                  {/* Profile Avatar Toggle */}
                   <label
                     id="export-toggle-profile-avatar"
-                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                    className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
                       effectiveProfileImage
                         ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
-                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 truncate mr-1">
@@ -1036,13 +938,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     />
                   </label>
 
-                  {/* dB Grid Toggle */}
                   <label
                     id="export-toggle-db-grid"
-                    className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                    className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
                       effectiveDbGrid
                         ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-200'
-                        : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 truncate mr-1">
@@ -1063,20 +964,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               </div>
 
-              {/* Backdrop Summary Status */}
-              <div className="px-3 py-2 rounded-xl bg-neutral-900/40 border border-neutral-800/80 flex items-center justify-between text-xs">
-                <span className="text-neutral-400">Rendering Backdrop:</span>
-                <span className="font-medium text-cyan-300 font-mono">
-                  {exportAlpha
-                    ? 'Transparent Alpha (None)'
-                    : backgroundVideo
-                    ? 'Looping Video Active'
-                    : backgroundImage
-                    ? 'Image Artwork Active'
-                    : settings.backgroundType === 'custom-solid'
-                    ? `Solid Color (${settings.backgroundColor || '#09090b'})`
-                    : settings.backgroundType}
-                </span>
+              {/* Compact Meta Summary Bar */}
+              <div className="px-3 py-2 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex items-center justify-between text-xs text-neutral-400">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="font-mono text-neutral-200">{formatTime(duration)}</span>
+                </div>
+                <div className="font-mono text-[11px] text-neutral-400 truncate max-w-[200px]">
+                  {exportAlpha ? 'Alpha' : settings.backgroundType}
+                </div>
               </div>
 
               {/* Error Display */}
@@ -1118,73 +1014,117 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           {/* STATE 2: Exporting Progress View */}
           {isExporting && progress && (
-            <div className="flex flex-col items-center justify-center py-6 gap-5 animate-fadeIn text-center">
-              {/* Pulse Speed Indicator */}
-              <div className="relative">
-                <div
-                  className={`w-20 h-20 rounded-2xl flex items-center justify-center animate-pulse ${
-                    exportAlpha ? 'transparency-checkerboard border-2 border-cyan-400 text-cyan-300' : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-400'
-                  }`}
-                >
-                  {format === 'png-sequence' ? (
-                    <FileArchive className="w-10 h-10" />
-                  ) : (
-                    <Zap className="w-10 h-10" />
-                  )}
+            <div className="flex flex-col items-center justify-center py-5 px-2 gap-5 animate-fadeIn">
+              {/* Radial Progress Ring with Percentage Display */}
+              <div className="relative flex items-center justify-center">
+                {/* Ambient backdrop glow */}
+                <div className="absolute w-36 h-36 rounded-full bg-cyan-500/15 blur-2xl pointer-events-none" />
+
+                <svg className="w-36 h-36 -rotate-90 transform" viewBox="0 0 120 120">
+                  {/* Track ring */}
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="50"
+                    className="stroke-neutral-800/80"
+                    strokeWidth="6"
+                    fill="none"
+                  />
+                  {/* Progress ring */}
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="50"
+                    className="stroke-cyan-400 transition-all duration-200 ease-out"
+                    strokeWidth="6"
+                    strokeDasharray={2 * Math.PI * 50}
+                    strokeDashoffset={2 * Math.PI * 50 * (1 - Math.min(Math.max(progress.percentage / 100, 0), 1))}
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                </svg>
+
+                {/* Inner Content inside ring */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="font-display font-black text-3xl text-white tracking-tight">
+                    {progress.percentage}%
+                  </span>
+                  <span className="text-[10px] font-mono text-neutral-400 mt-0.5">
+                    {progress.currentFrame}/{progress.totalFrames}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <h3 className="font-display font-bold text-lg text-white">
+              {/* Status Header */}
+              <div className="text-center flex flex-col gap-1 max-w-md">
+                <h3 className="font-display font-bold text-base text-white">
                   {format === 'png-sequence'
-                    ? 'Rasterizing Transparent PNG Sequence'
+                    ? 'Exporting PNG Sequence'
                     : exportAlpha
-                    ? 'Rendering Transparent Alpha Video'
-                    : 'Headless Video Rendering'}
+                    ? 'Exporting Transparent Video'
+                    : 'Exporting Video'}
                 </h3>
-                <p className="text-xs text-cyan-400 font-mono flex items-center justify-center gap-2">
-                  {progress.fps > 0 ? (
-                    <>
-                      <span>⚡ {progress.fps} FPS</span>
-                      {progress.speedMultiplier ? (
-                        <span className="text-amber-400 font-semibold">({progress.speedMultiplier}x realtime)</span>
-                      ) : null}
-                      {progress.estimatedRemainingSeconds ? (
-                        <span className="text-neutral-400">| ~{progress.estimatedRemainingSeconds}s remaining</span>
-                      ) : null}
-                    </>
-                  ) : (
-                    'Encoding audio & initializing frames...'
-                  )}
+                <p className="text-xs text-neutral-400">
+                  {progress.fps > 0
+                    ? renderEngine === 'server'
+                      ? 'Rendering on cloud server'
+                      : 'Rendering frames with GPU acceleration'
+                    : 'Initializing audio & encoder...'}
                 </p>
               </div>
 
-              {/* Progress Bar */}
-              <div className="w-full flex flex-col gap-2">
-                <div className="w-full h-3 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800 p-0.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full transition-all duration-150 shadow-[0_0_12px_#06b6d4]"
-                    style={{ width: `${progress.percentage}%` }}
-                  />
+              {/* Metric Bento Cards (4 columns) */}
+              <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Speed</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-semibold text-white">
+                      {progress.fps > 0 ? `${progress.fps} FPS` : '—'}
+                    </span>
+                    {progress.speedMultiplier && (
+                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/50">
+                        {progress.speedMultiplier}x
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs font-mono text-neutral-400">
-                  <span>
-                    Frame {progress.currentFrame} / {progress.totalFrames} ({progress.percentage}%)
+                <div className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Remaining</span>
+                  <span className="font-mono text-xs font-semibold text-cyan-300">
+                    {progress.estimatedRemainingSeconds !== undefined
+                      ? progress.estimatedRemainingSeconds > 60
+                        ? `~${Math.floor(progress.estimatedRemainingSeconds / 60)}m ${Math.round(progress.estimatedRemainingSeconds % 60)}s`
+                        : `~${Math.round(progress.estimatedRemainingSeconds)}s`
+                      : '—'}
                   </span>
-                  <span>
-                    {progress.elapsedSeconds.toFixed(1)}s elapsed
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Elapsed</span>
+                  <span className="font-mono text-xs font-semibold text-neutral-200">
+                    {progress.elapsedSeconds.toFixed(1)}s
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Engine</span>
+                  <span className="font-mono text-xs font-semibold text-neutral-200">
+                    {renderEngine === 'server' ? 'Cloud Server' : 'Client GPU'}
                   </span>
                 </div>
               </div>
 
-              <button
-                id="cancel-export-btn"
-                onClick={handleCancelExport}
-                className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-300 transition-colors cursor-pointer mt-2"
-              >
-                Cancel Export
-              </button>
+              {/* Cancel Button */}
+              <div className="pt-1">
+                <button
+                  id="cancel-export-btn"
+                  onClick={handleCancelExport}
+                  className="px-5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs font-medium text-neutral-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  Cancel Export
+                </button>
+              </div>
             </div>
           )}
 
@@ -1305,42 +1245,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Modal Footer */}
         {!isExporting && !exportResult && (
-          <div className="px-5 py-4 border-t border-neutral-800 bg-neutral-900/60 flex items-center justify-between gap-3">
-            <div className="text-xs text-neutral-400 font-mono flex items-center gap-1.5 flex-wrap">
-              <span className="text-neutral-500">Output:</span>
-              <span className="text-cyan-300 font-medium">
-                {getExportDimensions().width}×{getExportDimensions().height}
-              </span>
-              <span className="text-neutral-600">•</span>
-              <span className="text-neutral-300">{fps} FPS</span>
-              <span className="text-neutral-600">•</span>
-              <span className="text-cyan-400 uppercase font-semibold">{format}</span>
-              {activeJobId && (
-                <>
-                  <span className="text-neutral-600">•</span>
-                  <span className="text-indigo-400">Job: {activeJobId}</span>
-                </>
-              )}
-            </div>
+          <div className="px-5 py-3.5 border-t border-neutral-800 bg-neutral-900/60 flex items-center justify-between gap-3">
+            <button
+              id="export-modal-cancel-btn"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs font-medium text-neutral-300 hover:text-white transition-colors cursor-pointer border border-neutral-800 hover:border-neutral-700"
+            >
+              Cancel
+            </button>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs font-medium text-neutral-300 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              {/* Payload Generator Button next to Render */}
+              {/* Payload Generator Button next to Export */}
               <button
                 id="open-payload-generator-btn"
                 type="button"
                 onClick={() => setIsPayloadModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white font-medium text-xs border border-neutral-700/80 hover:border-cyan-500/50 transition-all cursor-pointer"
-                title="View headless cURL / JSON / Node payload for this visualizer"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white font-medium text-xs border border-neutral-700/80 hover:border-cyan-500/50 transition-all cursor-pointer"
+                title="View headless cURL / JSON payload"
               >
                 <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Payload Generator</span>
+                <span>Payload</span>
               </button>
 
               <button
@@ -1359,17 +1283,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 ) : (
                   <Zap className="w-4 h-4 fill-current" />
                 )}
-                <span>
-                  {format === 'png-sequence'
-                    ? 'Export PNG Sequence'
-                    : renderEngine === 'server'
-                    ? exportAlpha
-                      ? 'Render Alpha (Cloud FFmpeg)'
-                      : 'Render on Cloud Server'
-                    : exportAlpha
-                    ? 'Export Alpha Video'
-                    : 'Render (GPU Fast)'}
-                </span>
+                <span>Export</span>
               </button>
             </div>
           </div>

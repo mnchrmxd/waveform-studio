@@ -510,7 +510,6 @@ export default function App() {
             <h2 className="font-display font-bold text-sm tracking-tight text-neutral-300">
               Visualizer Customization & Overlays
             </h2>
-            <span className="text-xs text-neutral-500 font-mono">Real-time GPU rendering</span>
           </div>
 
           <ControlPanel

@@ -367,10 +367,10 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Aspect Ratio & Stage Toolbar */}
-      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+      {/* Aspect Ratio & Stage Toolbar (Dedicated Top Pane) */}
+      <div className="w-full px-3.5 sm:px-4 py-2.5 bg-neutral-950/90 border-b border-neutral-800/80 flex items-center justify-between gap-3 z-10">
         {/* Aspect Ratio Selector Pills */}
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-neutral-900/80 backdrop-blur-md border border-neutral-800 pointer-events-auto shadow-lg">
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-neutral-900/90 border border-neutral-800 shadow-sm">
           {(['16:9', '9:16', '1:1', '21:9'] as AspectRatioType[]).map((aspect) => (
             <button
               key={aspect}
@@ -388,9 +388,9 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
         </div>
 
         {/* Action Controls: Live Indicator & Fullscreen */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-2">
           {/* Live / Paused Status Indicator */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900/80 backdrop-blur-md border border-neutral-800 text-xs font-medium text-neutral-300 shadow-lg">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900/90 border border-neutral-800 text-xs font-medium text-neutral-300 shadow-sm">
             <span
               className={`w-2 h-2 rounded-full ${
                 isPlaying ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'
@@ -402,7 +402,7 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
           <button
             id="visualizer-fullscreen-btn"
             onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-md border border-neutral-800 text-neutral-300 hover:text-white transition-colors shadow-lg cursor-pointer"
+            className="p-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white transition-colors shadow-sm cursor-pointer"
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -410,22 +410,22 @@ export const VisualizerCanvas: React.FC<VisualizerCanvasProps> = ({
         </div>
       </div>
 
-      {/* Drop overlay */}
-      {isDragOver && (
-        <div className="absolute inset-0 z-30 bg-cyan-950/80 backdrop-blur-sm border-2 border-dashed border-cyan-400 rounded-2xl flex flex-col items-center justify-center text-cyan-200 pointer-events-none animate-fadeIn">
-          <Sparkles className="w-12 h-12 mb-2 animate-bounce text-cyan-300" />
-          <p className="text-lg font-bold">Drop Audio File to Visualize</p>
-          <p className="text-sm text-cyan-300/70 font-mono mt-1">MP3, WAV, FLAC, OGG, M4A supported</p>
-        </div>
-      )}
-
       {/* Canvas Viewport Frame */}
       <div
-        className="w-full flex items-center justify-center p-2 sm:p-4 bg-gradient-to-b from-neutral-950 via-neutral-900/40 to-neutral-950"
+        className="w-full flex items-center justify-center p-0 bg-black relative"
         style={{ minHeight: '300px' }}
       >
+        {/* Drop overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 z-30 bg-cyan-950/80 backdrop-blur-sm border-2 border-dashed border-cyan-400 flex flex-col items-center justify-center text-cyan-200 pointer-events-none animate-fadeIn">
+            <Sparkles className="w-12 h-12 mb-2 animate-bounce text-cyan-300" />
+            <p className="text-lg font-bold">Drop Audio File to Visualize</p>
+            <p className="text-sm text-cyan-300/70 font-mono mt-1">MP3, WAV, FLAC, OGG, M4A supported</p>
+          </div>
+        )}
+
         <div
-          className={`relative w-full max-w-full flex items-center justify-center rounded-xl overflow-hidden shadow-2xl transition-all ${
+          className={`relative w-full max-w-full flex items-center justify-center overflow-hidden transition-all ${
             settings.backgroundType === 'transparent' ? 'transparency-checkerboard' : ''
           }`}
           style={getAspectRatioContainerStyle()}
