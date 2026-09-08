@@ -74,9 +74,9 @@ export function getServerGpuStatus(): ServerGpuStatus {
   if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
     candidates.push(process.env.FFMPEG_PATH);
   }
-  candidates.push('ffmpeg');
-  candidates.push('/usr/bin/ffmpeg');
   candidates.push('/usr/local/bin/ffmpeg');
+  candidates.push('/usr/bin/ffmpeg');
+  candidates.push('ffmpeg');
 
   const staticPath = typeof ffmpegStatic === 'string'
     ? ffmpegStatic
