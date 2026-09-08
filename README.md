@@ -58,6 +58,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [`GET /api/render-progress/:jobId` (Live SSE Telemetry)](#get-apirender-progressjobid)
    - [`GET /api/render-status/:jobId`](#get-apirender-statusjobid)
    - [`GET /api/render-download/:jobId`](#get-apirender-downloadjobid)
+   - [`POST /api/render-cancel/:jobId`](#post-apirender-canceljobid)
    - [`POST /api/render-video` (Direct Headless)](#post-apirender-video)
    - [`GET /api/hardware-environment`](#get-apihardware-environment)
    - [`GET /api/health`](#get-apihealth)
@@ -264,6 +265,21 @@ data: {
   "elapsedSec": 5.3,
   "message": "Rendering frames in browser: 42% (94 FPS)",
   "timestamp": 1725300005300
+}
+```
+
+---
+
+### `POST /api/render-cancel/:jobId`
+
+Cancels an active render job immediately. If the job is executing on the headless server, the underlying FFmpeg encoding process and frame renderer are terminated without resource leaks. Progress listeners are notified with `status: "canceled"`.
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "jobId": "job_1725300000_abc12",
+  "status": "canceled"
 }
 ```
 

@@ -137,12 +137,17 @@ export function getVp9CodecString(width: number, height: number, fps: number): s
 
 export class FastHeadlessVideoExporter {
   private abortController: AbortController | null = null;
+  private isCancelled: boolean = false;
 
   public cancel(): void {
+    this.isCancelled = true;
     if (this.abortController) {
       this.abortController.abort();
-      this.abortController = null;
     }
+  }
+
+  public isAborted(): boolean {
+    return this.isCancelled || Boolean(this.abortController?.signal.aborted);
   }
 
   private async findOptimalVideoConfig(
@@ -298,8 +303,10 @@ export class FastHeadlessVideoExporter {
     config: ExportConfig,
     onProgress?: (progress: ExportProgress) => void
   ): Promise<ExportResult> {
+    this.isCancelled = false;
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
+    const checkAborted = () => this.isCancelled || signal.aborted;
 
     const startTime = performance.now();
 
@@ -578,10 +585,12 @@ export class FastHeadlessVideoExporter {
       const planarBuffer = new Float32Array(channels * audioChunkFrames);
 
       for (let s = 0; s < totalAudioSamples; s += audioChunkFrames) {
-        if (signal.aborted) {
-          videoEncoder.close();
-          audioEncoder.close();
-          throw new Error('Export canceled by user.');
+        if (checkAborted()) {
+          try { videoEncoder.close(); } catch {}
+          try { audioEncoder.close(); } catch {}
+          const cancelErr = new Error('Export canceled by user.');
+          cancelErr.name = 'AbortError';
+          throw cancelErr;
         }
 
         const chunkLen = Math.min(audioChunkFrames, totalAudioSamples - s);
@@ -610,6 +619,13 @@ export class FastHeadlessVideoExporter {
 
         // Audio backpressure pacing: ensure audio encoder queue stays small and doesn't swamp memory
         while (audioEncoder.encodeQueueSize > 8) {
+          if (checkAborted()) {
+            try { videoEncoder.close(); } catch {}
+            try { audioEncoder.close(); } catch {}
+            const cancelErr = new Error('Export canceled by user.');
+            cancelErr.name = 'AbortError';
+            throw cancelErr;
+          }
           if (fatalError) throw fatalError;
           await new Promise<void>((resolve) => setTimeout(resolve, 2));
         }
@@ -645,10 +661,12 @@ export class FastHeadlessVideoExporter {
       : config.settings;
 
     for (let i = 0; i < totalFrames; i++) {
-      if (signal.aborted) {
-        videoEncoder.close();
-        if (audioEncoder) audioEncoder.close();
-        throw new Error('Export canceled by user.');
+      if (checkAborted()) {
+        try { videoEncoder.close(); } catch {}
+        if (audioEncoder) { try { audioEncoder.close(); } catch {} }
+        const cancelErr = new Error('Export canceled by user.');
+        cancelErr.name = 'AbortError';
+        throw cancelErr;
       }
 
       const frameTimeSec = trimStart + i / fps;
@@ -717,6 +735,13 @@ export class FastHeadlessVideoExporter {
       // Dynamically adjusted to GPU architecture (6-8 for Nvidia/Apple to maximize throughput, 2-3 for Snapdragon to avoid mobile OOM)
       const maxQueue = hwProfile?.optimalSettings?.encoderQueueDepth || 3;
       while (videoEncoder.encodeQueueSize > maxQueue) {
+        if (checkAborted()) {
+          try { videoEncoder.close(); } catch {}
+          if (audioEncoder) { try { audioEncoder.close(); } catch {} }
+          const cancelErr = new Error('Export canceled by user.');
+          cancelErr.name = 'AbortError';
+          throw cancelErr;
+        }
         if (fatalError) throw fatalError;
         await new Promise<void>((resolve) => {
           let resolved = false;
@@ -1112,15 +1137,24 @@ export class FastHeadlessVideoExporter {
         combinedStream.getTracks().forEach((t) => t.stop());
       };
 
+      const handleAbort = () => {
+        isCanceled = true;
+        cleanup();
+        try {
+          recorder.stop();
+        } catch {}
+        const cancelErr = new Error('Export canceled by user.');
+        cancelErr.name = 'AbortError';
+        reject(cancelErr);
+      };
+
+      if (this.isCancelled || this.abortController?.signal.aborted) {
+        handleAbort();
+        return;
+      }
+
       if (this.abortController) {
-        this.abortController.signal.addEventListener('abort', () => {
-          isCanceled = true;
-          cleanup();
-          try {
-            recorder.stop();
-          } catch {}
-          reject(new Error('Export canceled by user.'));
-        });
+        this.abortController.signal.addEventListener('abort', handleAbort, { once: true });
       }
 
       recorder.onerror = (err) => {
@@ -1170,7 +1204,7 @@ export class FastHeadlessVideoExporter {
       const renderStartTime = performance.now();
 
       const renderLoop = () => {
-        if (isCanceled) return;
+        if (isCanceled || this.isCancelled || this.abortController?.signal.aborted) return;
 
         const now = performance.now();
         const elapsed = (now - renderStartTime) / 1000;
@@ -1295,8 +1329,10 @@ export class FastHeadlessVideoExporter {
     let currentFps = 0;
 
     for (let i = 0; i < totalFrames; i++) {
-      if (signal?.aborted) {
-        throw new Error('Export canceled by user.');
+      if (this.isCancelled || signal?.aborted) {
+        const cancelErr = new Error('Export canceled by user.');
+        cancelErr.name = 'AbortError';
+        throw cancelErr;
       }
 
       const frameTimeSec = trimStart + i / fps;
@@ -1416,6 +1452,12 @@ HOW TO IMPORT TRANSPARENT SEQUENCE INTO VIDEO EDITORS:
    - Select 'frame_000000.png', check 'PNG Sequence', click Import.
 `;
     zip.file('README_IMPORT.txt', readme);
+
+    if (this.isCancelled || signal?.aborted) {
+      const cancelErr = new Error('Export canceled by user.');
+      cancelErr.name = 'AbortError';
+      throw cancelErr;
+    }
 
     // Packaging ZIP archive with STORE compression (PNGs are already compressed)
     const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, (metadata) => {

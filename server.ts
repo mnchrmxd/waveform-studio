@@ -151,7 +151,7 @@ async function startServer() {
     id: string;
     createdAt: number;
     payload: HeadlessVideoOptions;
-    status: 'pending' | 'rendering' | 'completed' | 'failed';
+    status: 'pending' | 'rendering' | 'completed' | 'failed' | 'canceled';
     progress: number; // 0..100
     currentFrame?: number;
     totalFrames?: number;
@@ -163,6 +163,7 @@ async function startServer() {
     mimeType?: string;
     fileSizeBytes?: number;
     error?: string;
+    abortController?: AbortController;
   }
 
   const renderJobs = new Map<string, RenderJob>();
@@ -317,8 +318,34 @@ async function startServer() {
   // Endpoint: Browser / Worker Reports Progress
   app.post('/api/render-progress/:jobId', (req, res) => {
     const { jobId } = req.params;
+    const job = renderJobs.get(jobId);
+    if (req.body?.status === 'canceled' && job?.abortController) {
+      console.log(`[Render Job] Progress reported cancellation for job "${jobId}". Triggering abort.`);
+      job.abortController.abort();
+    }
     notifyJobProgress(jobId, req.body || {});
     res.json({ ok: true });
+  });
+
+  // Endpoint: Cancel Active Render Job
+  app.post('/api/render-cancel/:jobId', (req, res) => {
+    const { jobId } = req.params;
+    const job = renderJobs.get(jobId);
+    if (!job) {
+      return res.status(404).json({ error: `Job "${jobId}" not found` });
+    }
+
+    console.log(`[Render Job] Explicit cancellation request received for job "${jobId}".`);
+    if (job.abortController) {
+      job.abortController.abort();
+    }
+    notifyJobProgress(jobId, {
+      status: 'canceled',
+      progress: 0,
+      message: 'Render job cancelled by user.',
+    });
+
+    res.json({ success: true, jobId, status: 'canceled' });
   });
 
   // Endpoint: Browser / Worker Completes Job and Uploads Result
@@ -407,11 +434,21 @@ async function startServer() {
 
   // API 3: Core Headless Video Generation Endpoint (Synchronous or Server-Side)
   const handleRenderVideo = async (req: express.Request, res: express.Response) => {
-    try {
-      const body: HeadlessVideoOptions & { jobId?: string } = req.body || {};
-      const jobId = (req.query.jobId as string) || body.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const abortController = new AbortController();
+    let isClientDisconnected = false;
 
-      console.log(`[Headless Render] Started render request. Dimensions: ${body.video?.width || 1280}x${body.video?.height || 720}, Format: ${body.video?.format || 'mp4'}`);
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        isClientDisconnected = true;
+        abortController.abort();
+      }
+    });
+
+    const body: HeadlessVideoOptions & { jobId?: string } = req.body || {};
+    const jobId = (req.query.jobId as string) || body.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    try {
+      console.log(`[Headless Render] Started render request for "${jobId}". Dimensions: ${body.video?.width || 1280}x${body.video?.height || 720}, Format: ${body.video?.format || 'mp4'}`);
 
       // Register job for progress streaming if client listens
       const job: RenderJob = {
@@ -421,8 +458,11 @@ async function startServer() {
         status: 'rendering',
         progress: 0,
         message: 'Server-side rendering started...',
+        abortController,
       };
       renderJobs.set(jobId, job);
+
+      body.abortSignal = abortController.signal;
 
       // Attach onProgress callback
       body.onProgress = (progressFrac, meta) => {
@@ -488,11 +528,27 @@ async function startServer() {
         result.cleanup();
       });
     } catch (err: any) {
+      if (abortController.signal.aborted || isClientDisconnected) {
+        console.log(`[Headless Render] Job "${jobId}" was cancelled by client.`);
+        notifyJobProgress(jobId, {
+          status: 'canceled',
+          progress: 0,
+          message: 'Server rendering cancelled.',
+        });
+        if (!res.headersSent) {
+          res.status(499).json({ error: 'Render cancelled by client', jobId });
+        }
+        return;
+      }
+
       console.error('[Headless Render] Error:', err);
-      res.status(400).json({
-        error: err.message || 'Failed to render headless video',
-        details: err.stack,
-      });
+      notifyJobProgress(jobId, { status: 'failed', error: err.message });
+      if (!res.headersSent) {
+        res.status(400).json({
+          error: err.message || 'Failed to render headless video',
+          details: err.stack,
+        });
+      }
     }
   };
 
@@ -510,7 +566,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'))
+      ? path.join(process.cwd(), 'dist')
+      : fs.existsSync(path.join(process.cwd(), 'build', 'index.html'))
+        ? path.join(process.cwd(), 'build')
+        : fs.existsSync(path.join(__dirname, 'index.html'))
+          ? __dirname
+          : path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

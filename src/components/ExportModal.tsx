@@ -114,15 +114,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [effectiveProfileImage, setEffectiveProfileImage] = useState<boolean>(Boolean(settings.showProfileImage));
   const [effectiveDbGrid, setEffectiveDbGrid] = useState<boolean>(Boolean(settings.showDbGrid));
 
-  useEffect(() => {
-    if (isOpen) {
-      setEffectiveTrackInfo(Boolean(settings.showTrackInfo));
-      setEffectiveProfileImage(Boolean(settings.showProfileImage));
-      setEffectiveDbGrid(Boolean(settings.showDbGrid));
-      setExportAlpha(settings.backgroundType === 'transparent');
-    }
-  }, [isOpen, settings.showTrackInfo, settings.showProfileImage, settings.showDbGrid, settings.backgroundType]);
-
   const { isCloudAvailable } = useCloudStatus();
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
@@ -131,6 +122,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [renderEngine, setRenderEngine] = useState<'client' | 'server'>('client');
   const serverAbortRef = React.useRef<AbortController | null>(null);
   const serverSseRef = React.useRef<EventSource | null>(null);
+  const serverJobIdRef = React.useRef<string | null>(null);
+  const prevIsOpenRef = React.useRef<boolean>(false);
 
   // If cloud becomes unavailable, automatically fallback to client engine
   useEffect(() => {
@@ -139,15 +132,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   }, [isCloudAvailable, renderEngine]);
 
+  // Initialize modal state ONLY when modal transitions from closed to open.
+  // This prevents settings changes (like toggling dB grid) from re-triggering side-effects or resetting format/alpha.
   useEffect(() => {
-    if (isOpen) {
-      setExportResult(null);
-      setProgress(null);
-      setErrorMessage(null);
-      setIsExporting(false);
-      if (!isCloudAvailable) {
-        setRenderEngine('client');
-      }
+    if (isOpen && !prevIsOpenRef.current) {
+      setEffectiveTrackInfo(Boolean(settings.showTrackInfo));
+      setEffectiveProfileImage(Boolean(settings.showProfileImage));
+      setEffectiveDbGrid(Boolean(settings.showDbGrid));
+
       const isInitialAlpha = settings.backgroundType === 'transparent';
       setExportAlpha(isInitialAlpha);
       if (isInitialAlpha) {
@@ -156,14 +148,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         setFormat('mp4');
       }
 
+      setExportResult(null);
+      setProgress(null);
+      setErrorMessage(null);
+      setIsExporting(false);
+
+      if (!isCloudAvailable) {
+        setRenderEngine('client');
+      }
+
       // Check URL for jobId if not already set
       if (!activeJobId && typeof window !== 'undefined') {
         const sp = new URLSearchParams(window.location.search);
         const jId = sp.get('jobId');
         if (jId) setActiveJobId(jId);
       }
+    } else if (!isOpen && prevIsOpenRef.current) {
+      if (isExporting) {
+        handleCancelExport();
+      }
     }
-  }, [isOpen, settings.backgroundType, activeJobId]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, isCloudAvailable]);
 
   // Load external job payload if jobId is present
   useEffect(() => {
@@ -292,6 +298,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setExportResult(null);
 
     const serverJobId = activeJobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    serverJobIdRef.current = serverJobId;
     addDebugLog(`Starting Cloud Server FFmpeg Render for job "${serverJobId}"...`, 'info');
 
     const totalEstFrames = Math.round(exportDuration * fps);
@@ -437,9 +444,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       if (abortCtrl.signal.aborted) {
         addDebugLog('Server render cancelled by user.', 'warn');
         setIsExporting(false);
+        setProgress(null);
+        setErrorMessage(null);
         return;
       }
       setIsExporting(false);
+      setProgress(null);
       setErrorMessage(serverErr.message || 'Server rendering failed.');
       addDebugLog(`Server render error: ${serverErr.message}`, 'warn');
     }
@@ -546,9 +556,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
     } catch (err: unknown) {
       setIsExporting(false);
-      const msg = err instanceof Error ? err.message : 'Unknown error during export.';
-      setErrorMessage(msg);
-      addDebugLog(`Export error: ${msg}`, 'warn');
+      setProgress(null);
+      const isAbort =
+        fastVideoExporter.isAborted() ||
+        (err instanceof Error &&
+          (err.name === 'AbortError' ||
+            err.message.toLowerCase().includes('cancel') ||
+            err.message.toLowerCase().includes('abort')));
+      if (isAbort) {
+        setErrorMessage(null);
+        addDebugLog('Export cancelled cleanly by user.', 'info');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Unknown error during export.';
+        setErrorMessage(msg);
+        addDebugLog(`Export error: ${msg}`, 'warn');
+      }
     }
   };
 
@@ -562,9 +584,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
     setIsExporting(false);
     setProgress(null);
+    setErrorMessage(null);
+    setExportResult(null);
     addDebugLog('Export cancelled by user', 'warn');
-    if (activeJobId) {
-      fetch(`/api/render-progress/${activeJobId}`, {
+    const targetJobId = serverJobIdRef.current || activeJobId;
+    if (targetJobId) {
+      fetch(`/api/render-cancel/${targetJobId}`, { method: 'POST' }).catch(() => {});
+      fetch(`/api/render-progress/${targetJobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -614,6 +640,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             >
               <Terminal className="w-3.5 h-3.5 text-cyan-400" />
               <span>Debug</span>
+            </button>
+
+            {/* Header Close Button */}
+            <button
+              id="export-modal-header-close-btn"
+              type="button"
+              onClick={() => {
+                if (isExporting) {
+                  handleCancelExport();
+                }
+                onClose();
+              }}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+              title="Close modal"
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
