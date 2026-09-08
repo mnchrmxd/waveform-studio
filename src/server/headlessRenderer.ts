@@ -97,7 +97,7 @@ export function getServerGpuStatus(): ServerGpuStatus {
         const out = (encCheck.stdout || '').toString();
         if (out.includes('h264_nvenc')) {
           // Probe if NVENC can actually encode on this system
-          // Try newer SDK preset 'p1' (fastest low-latency)
+          // Try newer SDK preset 'p1' with low-latency tune
           const testP1 = spawnSync(candidate, [
             '-f', 'lavfi',
             '-i', 'color=c=black:s=64x64:d=0.04',
@@ -115,7 +115,7 @@ export function getServerGpuStatus(): ServerGpuStatus {
             break;
           }
 
-          // Fallback to legacy/universal preset 'fast'
+          // Fallback to universal preset 'fast' with low-latency tune
           const testFast = spawnSync(candidate, [
             '-f', 'lavfi',
             '-i', 'color=c=black:s=64x64:d=0.04',
@@ -132,6 +132,42 @@ export function getServerGpuStatus(): ServerGpuStatus {
             chosenPreset = 'fast';
             break;
           }
+
+          // Fallback: without -tune argument
+          const testNoTune = spawnSync(candidate, [
+            '-f', 'lavfi',
+            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-c:v', 'h264_nvenc',
+            '-preset', 'fast',
+            '-f', 'null',
+            '-',
+          ]);
+
+          if (testNoTune.status === 0) {
+            chosenBinary = candidate;
+            supportsNvenc = true;
+            chosenPreset = 'fast';
+            break;
+          }
+
+          // Fallback: bare minimum test
+          const testBare = spawnSync(candidate, [
+            '-f', 'lavfi',
+            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-c:v', 'h264_nvenc',
+            '-f', 'null',
+            '-',
+          ]);
+
+          if (testBare.status === 0) {
+            chosenBinary = candidate;
+            supportsNvenc = true;
+            chosenPreset = 'default';
+            break;
+          }
+
+          const errSummary = (testP1.stderr || testNoTune.stderr || '').toString().slice(0, 150);
+          console.warn(`[Hardware Detection] candidate ${candidate} has h264_nvenc encoder declared, but actual encode failed: ${errSummary.trim()}`);
         }
       }
     } catch {
