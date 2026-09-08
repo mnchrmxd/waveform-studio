@@ -615,16 +615,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Terminal className="w-3.5 h-3.5 text-cyan-400" />
               <span>Debug</span>
             </button>
-
-            {!isExporting && (
-              <button
-                id="export-modal-close-btn"
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
           </div>
         </div>
 

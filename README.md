@@ -59,7 +59,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [Web Request Workflow (cURL + Browser)](#web-request-workflow-curl--browser)
    - [Direct Headless cURL](#direct-headless-curl)
    - [Node.js Script](#nodejs-script)
-   - [Python Script](#python-script)
+   - [Python Example & Colab Notebook](#python-example)
 5. [Configuration Schema Reference](#configuration-schema-reference)
 6. [Troubleshooting & FAQ](#troubleshooting--faq)
 
@@ -451,9 +451,9 @@ generateVisualizerVideo().catch(console.error);
 
 ---
 
-### Python Example
+### Python Example &nbsp; [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mnchrmXD/waveform-studio/blob/main/waveform_studio.ipynb)
 
-Using Python's `requests` library (`pip install requests`):
+Run interactively in Google Colab with the included [`waveform_studio.ipynb`](./waveform_studio.ipynb) notebook, or execute directly using Python's `requests` library (`pip install requests`):
 
 ```python
 import requests
