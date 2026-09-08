@@ -17,20 +17,24 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
   - **Social Media Aspect Ratio Presets**: `16:9` (YouTube / Landscape), `9:16` (TikTok / Reels / Shorts), `1:1` (Instagram Feed), `21:9` (Cinematic Ultrawide), `3:1` (Banner), and `responsive`.
   - **Audio Input Options**: Local file upload (MP3, WAV, AAC, FLAC, OGG), remote URL streaming via built-in CORS proxy, pre-synthesized demo tracks, or live microphone capture.
 
-- **Dual Rendering Paradigms & Export Engines**:
+- **Dual Rendering Paradigms & Hardware Environment Optimization**:
   1. **Client GPU Engine (WebCodecs)**:
      - Modern in-browser rendering utilizing hardware-accelerated WebCodecs (`VideoEncoder`) paired with `mp4-muxer` and `webm-muxer`, falling back to `MediaRecorder`.
      - Operates entirely client-side; fully functional in offline environments or static hosting without requiring a Node.js server.
-     - Zero dropped frames via active backpressure pacing and quality latency modes on both desktop and mobile devices.
-  2. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
+     - Zero dropped frames via hardware-adaptive backpressure pacing and quality latency modes on both desktop and mobile devices.
+  2. **Hardware Environment & GPU Detection**:
+     - Automatically profiles the host environment (Local PC, Mobile, or Cloud Server) and GPU hardware (NVIDIA GeForce/RTX, AMD Radeon, Intel Iris/Arc, Qualcomm Snapdragon / Adreno, Apple Silicon M-series).
+     - Dynamically computes optimal resolution, framerate, target bitrate, and encoder queue depth (e.g. 6–8 frames for Nvidia NVENC/Apple Silicon to prevent pipeline stalls; 2–3 frames for Snapdragon/mobile to prevent memory exhaustion).
+     - **Cloud Render Disabling / Bypass**: Automatically detects capable local GPUs and can bypass cloud rendering to eliminate network latency and CPU bottlenecks.
+  3. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
      - Server-side headless rendering utilizing Node.js `@napi-rs/canvas` and `ffmpeg-static` (`ultrafast` / `realtime` presets).
      - **Hardware Acceleration**: Automatic GPU NVENC hardware encoding detection with multi-threaded CPU fallback (`libx264`).
      - **Ultra-Fast Cold Start**: Supports `HEADLESS_ONLY=true` to skip Vite bundling in Google Colab, CLI pipelines, and cloud containers.
      - Generates zero client memory load; ideal for automated worker scripts, Colab, or CI/CD pipelines.
-     - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active, cloud server rendering is automatically disabled with visual notice, seamlessly routing exports through the Client GPU engine.
-  3. **Alpha Channel Transparency**:
+     - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active or when local GPU is detected, exports are routed through the faster Client GPU engine.
+  4. **Alpha Channel Transparency**:
      - Export transparent WebM videos (`libvpx-vp9` with `yuva420p` pixel format) for direct overlay in video editors such as Premiere Pro, DaVinci Resolve, Final Cut, and OBS Studio.
-  4. **PNG Image Sequence (ZIP)**:
+  5. **PNG Image Sequence (ZIP)**:
      - Export full-resolution frame-by-frame PNG sequences zipped in-memory for post-production workflows.
 
 ---
@@ -55,6 +59,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [`GET /api/render-status/:jobId`](#get-apirender-statusjobid)
    - [`GET /api/render-download/:jobId`](#get-apirender-downloadjobid)
    - [`POST /api/render-video` (Direct Headless)](#post-apirender-video)
+   - [`GET /api/hardware-environment`](#get-apihardware-environment)
    - [`GET /api/health`](#get-apihealth)
    - [`GET /api/proxy`](#get-apiproxy)
 4. [API Code Examples](#api-code-examples)
@@ -273,6 +278,62 @@ Direct synchronous headless video rendering via Node.js Canvas and FFmpeg (`ffmp
 
 #### Response
 Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment download, with the `X-Render-Job-Id` header attached for tracking. Alternatively, pass `?format=json` in the query parameters to receive a JSON response containing metadata and a base64 Data URL.
+
+---
+
+### `GET /api/hardware-environment`
+
+Inspects the server host environment, container detection, CPU architecture, and available GPU or hardware encoder support.
+
+#### Response (`200 OK`)
+```json
+{
+  "environment": "cloud-server",
+  "os": "linux",
+  "cpuArch": "x64",
+  "cpuCount": 8,
+  "totalMemoryMb": 16384,
+  "freeMemoryMb": 12150,
+  "isCloud": true,
+  "gpuCapabilities": {
+    "hasColabGpu": false,
+    "encoder": "ffmpeg-static"
+  },
+  "recommendation": "Cloud container active. If client device has a dedicated GPU (Nvidia/AMD/Apple/Snapdragon), client GPU rendering is recommended for 10x faster export."
+}
+```
+
+---
+
+### `GET /api/health`
+
+Health check and capability verification endpoint used by the client UI to verify whether the cloud Node.js server is online.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "ok",
+  "service": "Waveform Studio Headless Video Generator",
+  "features": {
+    "headlessRendering": true,
+    "mp4Export": true,
+    "transparentAlphaWebm": true,
+    "fftAnalyzer": true,
+    "ffmpegSource": "npm (ffmpeg-static)",
+    "ffmpegBinary": "/path/to/ffmpeg"
+  },
+  "timestamp": "2026-09-08T15:00:00.000Z"
+}
+```
+
+---
+
+### `GET /api/proxy`
+
+A built-in CORS proxy for streaming remote audio files or loading artwork directly into the canvas without triggering cross-origin canvas tainting.
+
+#### Query Parameters
+- `url` (required): URL-encoded remote media URL (`https://...`).
 
 ---
 

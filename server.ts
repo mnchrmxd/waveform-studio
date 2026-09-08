@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { createServer as createViteServer } from 'vite';
 import { renderHeadlessVideo, HeadlessVideoOptions, getFfmpegPath } from './src/server/headlessRenderer';
 import { DEFAULT_SETTINGS, COLOR_THEMES } from './src/data/presets';
@@ -27,6 +28,33 @@ async function startServer() {
         ffmpegBinary: getFfmpegPath(),
       },
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  // API: Server Hardware & Cloud Environment Inspection
+  app.get('/api/hardware-environment', (_req, res) => {
+    const isCloud = Boolean(
+      process.env.K_SERVICE ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.COLAB_GPU ||
+      process.env.AWS_EXECUTION_ENV ||
+      fs.existsSync('/.dockerenv')
+    );
+    res.json({
+      environment: isCloud ? 'cloud-server' : 'local-pc',
+      os: process.platform,
+      cpuArch: process.arch,
+      cpuCount: os.cpus().length,
+      totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
+      freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
+      isCloud,
+      gpuCapabilities: {
+        hasColabGpu: Boolean(process.env.COLAB_GPU),
+        encoder: 'ffmpeg-static',
+      },
+      recommendation: isCloud
+        ? 'Cloud container active. If client device has a dedicated GPU (Nvidia/AMD/Apple/Snapdragon), client GPU rendering is recommended for 10x faster export.'
+        : 'Local server environment.',
     });
   });
 

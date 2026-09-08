@@ -5,6 +5,7 @@ import { ColorTheme, VisualizerSettings, WaveformData } from '../types';
 import { OfflineAudioAnalyzer } from './fftAnalyzer';
 import { renderVisualizerFrame } from './visualizerRenderer';
 import { checkCloudAvailability } from './cloudDetection';
+import { getHardwareEnvironmentProfile } from './hardwareEnvironment';
 
 export type ExportResolution = '720p' | '1080p' | '4k' | 'custom';
 export type ExportFormat = 'mp4' | 'webm' | 'webm-alpha' | 'png-sequence';
@@ -405,6 +406,8 @@ export class FastHeadlessVideoExporter {
     let analyzer: OfflineAudioAnalyzer | null = new OfflineAudioAnalyzer(audioBuffer, 1024);
 
     // 6. Create Offscreen or Virtual Canvas
+    const hwProfile = getHardwareEnvironmentProfile();
+    const isDesync = hwProfile.optimalSettings.canvasDesynchronized;
     let canvas: HTMLCanvasElement | OffscreenCanvas;
     let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
 
@@ -412,12 +415,16 @@ export class FastHeadlessVideoExporter {
       canvas = new OffscreenCanvas(width, height);
       ctx = canvas.getContext('2d', {
         alpha: isAlphaExport ? true : false,
+        desynchronized: isDesync,
       }) as OffscreenCanvasRenderingContext2D;
     } else {
       canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      ctx = canvas.getContext('2d', { alpha: isAlphaExport ? true : false });
+      ctx = canvas.getContext('2d', {
+        alpha: isAlphaExport ? true : false,
+        desynchronized: isDesync,
+      });
     }
 
     if (!ctx) {
@@ -706,10 +713,10 @@ export class FastHeadlessVideoExporter {
       videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
       videoFrame.close();
 
-      // Strict bounded encoder queue pacing:
-      // Never allow more than 2 uncompressed frames to accumulate in GPU/encoder memory.
-      // This eliminates the massive queue buildup that causes GPU out-of-memory and browser crashes.
-      while (videoEncoder.encodeQueueSize > 2) {
+      // Hardware-tuned encoder queue pacing:
+      // Dynamically adjusted to GPU architecture (6-8 for Nvidia/Apple to maximize throughput, 2-3 for Snapdragon to avoid mobile OOM)
+      const maxQueue = hwProfile?.optimalSettings?.encoderQueueDepth || 3;
+      while (videoEncoder.encodeQueueSize > maxQueue) {
         if (fatalError) throw fatalError;
         await new Promise<void>((resolve) => {
           let resolved = false;
