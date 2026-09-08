@@ -63,6 +63,12 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
   const [activeFormat, setActiveFormat] = useState<'curl' | 'json'>('curl');
   const [copied, setCopied] = useState(false);
   const [isServerRendering, setIsServerRendering] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<{
+    percentage: number;
+    currentFrame?: number;
+    totalFrames?: number;
+    fps?: number;
+  } | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
 
@@ -427,12 +433,32 @@ curl -X POST http://localhost:3000/api/render-video \\
     setIsServerRendering(true);
     setServerError(null);
     setServerSuccess(null);
+    setRenderProgress({ percentage: 0 });
+
+    const testJobId = `test_run_${Date.now()}`;
+    let sse: EventSource | null = null;
 
     try {
-      const response = await fetch('/api/render-video', {
+      // Connect to SSE for real-time progress events
+      sse = new EventSource(`/api/render-progress/${testJobId}`);
+      sse.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (typeof data.progress === 'number') {
+            setRenderProgress({
+              percentage: data.progress,
+              currentFrame: data.currentFrame,
+              totalFrames: data.totalFrames,
+              fps: data.fps,
+            });
+          }
+        } catch {}
+      };
+
+      const response = await fetch(`/api/render-video?jobId=${testJobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadObject),
+        body: JSON.stringify({ ...payloadObject, jobId: testJobId }),
       });
 
       if (!response.ok) {
@@ -454,6 +480,8 @@ curl -X POST http://localhost:3000/api/render-video \\
     } catch (err: any) {
       setServerError(err?.message || 'Server rendering failed.');
     } finally {
+      if (sse) sse.close();
+      setRenderProgress(null);
       setIsServerRendering(false);
     }
   };
@@ -579,7 +607,30 @@ curl -X POST http://localhost:3000/api/render-video \\
             </div>
           </div>
 
-          {/* Feedback alerts */}
+          {/* Feedback alerts & Progress */}
+          {renderProgress && (
+            <div id="server-render-progress" className="p-3.5 bg-neutral-900 border border-neutral-800 rounded-xl space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-cyan-400 flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                  Rendering Video... {renderProgress.percentage}%
+                </span>
+                <span className="text-neutral-400 font-mono text-[11px]">
+                  {renderProgress.currentFrame && renderProgress.totalFrames
+                    ? `${renderProgress.currentFrame} / ${renderProgress.totalFrames} frames`
+                    : ''}
+                  {renderProgress.fps ? ` • ${renderProgress.fps} fps` : ''}
+                </span>
+              </div>
+              <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-150"
+                  style={{ width: `${Math.max(2, renderProgress.percentage)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {serverSuccess && (
             <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex items-center gap-2 text-emerald-300 text-xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />

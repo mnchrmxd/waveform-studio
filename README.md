@@ -283,23 +283,30 @@ Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment
 
 ### `GET /api/hardware-environment`
 
-Inspects the server host environment, container detection, CPU architecture, and available GPU or hardware encoder support.
+Inspects the server host environment, container detection, CPU architecture, Google Colab detection, and available GPU hardware acceleration (`h264_nvenc` via system FFmpeg).
 
 #### Response (`200 OK`)
 ```json
 {
-  "environment": "cloud-server",
+  "environment": "colab",
   "os": "linux",
   "cpuArch": "x64",
   "cpuCount": 8,
   "totalMemoryMb": 16384,
   "freeMemoryMb": 12150,
   "isCloud": true,
-  "gpuCapabilities": {
-    "hasColabGpu": false,
-    "encoder": "ffmpeg-static"
+  "isColab": true,
+  "gpu": {
+    "hasNvidiaGpu": true,
+    "model": "Tesla T4",
+    "vramMb": 15360,
+    "driverVersion": "535.104.05",
+    "supportsNvenc": true,
+    "activeEncoder": "h264_nvenc",
+    "ffmpegBinary": "/usr/bin/ffmpeg",
+    "nvencPreset": "p1"
   },
-  "recommendation": "Cloud container active. If client device has a dedicated GPU (Nvidia/AMD/Apple/Snapdragon), client GPU rendering is recommended for 10x faster export."
+  "recommendation": "Hardware GPU acceleration active (Tesla T4 via h264_nvenc). Best headless settings (1080p @ 60 FPS) enabled for maximum speed."
 }
 ```
 
@@ -516,19 +523,23 @@ generateVisualizerVideo().catch(console.error);
 
 ### Python Example &nbsp; [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mnchrmXD/waveform-studio/blob/main/waveform_studio.ipynb)
 
-Run interactively in Google Colab with the included [`waveform_studio.ipynb`](./waveform_studio.ipynb) notebook, or execute directly using Python's `requests` library (`pip install requests`):
+Run interactively in Google Colab with the included [`waveform_studio.ipynb`](./waveform_studio.ipynb) notebook featuring automatic Tesla T4/V100/A100 GPU probe, NVENC hardware acceleration, and real-time `tqdm` progress streaming (tracking percentage, frames encoded, rendering FPS, and ETA):
 
 ```python
 import requests
+import threading
+import time
+from tqdm import tqdm
 
-url = "http://localhost:3000/api/render-video"
+url = "http://localhost:3000/api/render-video?jobId=python_job_1"
 
 payload = {
+    "jobId": "python_job_1",
     "audio": "https://cdn.freesound.org/previews/612/612627_11861866-lq.mp3",
     "video": {
         "width": 1920,
         "height": 1080,
-        "fps": 30,
+        "fps": 60,
         "format": "mp4"
     },
     "settings": {
@@ -540,17 +551,38 @@ payload = {
     "theme": "emerald-mint"
 }
 
-print("Submitting render job...")
-response = requests.post(url, json=payload, stream=True)
+# Run render request in background thread while tracking live progress bar
+render_resp = [None]
+t = threading.Thread(target=lambda: render_resp.__setitem__(0, requests.post(url, json=payload, stream=True)))
+t.daemon = True
+t.start()
 
-if response.status_code == 200:
-    with open("python_render.mp4", "wb") as f:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
+with tqdm(total=100, desc="🎨 Rendering Video", unit="%", bar_format="{l_bar}{bar}| {n:.0f}% [{elapsed}<{remaining}] {postfix}") as pbar:
+    last_pct = 0
+    while t.is_alive():
+        try:
+            st = requests.get("http://localhost:3000/api/render-status/python_job_1", timeout=0.8).json()
+            pct = int(st.get('progress', 0))
+            if pct > last_pct:
+                pbar.update(pct - last_pct)
+                last_pct = pct
+            pbar.set_postfix({
+                'frames': f"{st.get('currentFrame', 0)}/{st.get('totalFrames', 0)}",
+                'speed': f"{st.get('fps', 0)}fps"
+            })
+            if st.get('status') == 'completed':
+                break
+        except Exception:
+            pass
+        time.sleep(0.15)
+    t.join()
+
+if render_resp[0] and render_resp[0].status_code == 200:
+    with open("waveform_render.mp4", "wb") as f:
+        for chunk in render_resp[0].iter_content(chunk_size=1024 * 1024):
             if chunk:
                 f.write(chunk)
-    print("Render succeeded! File saved to python_render.mp4")
-else:
-    print(f"Error {response.status_code}: {response.text}")
+    print("\n🎉 Video saved to waveform_render.mp4")
 ```
 
 ---

@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { createServer as createViteServer } from 'vite';
-import { renderHeadlessVideo, HeadlessVideoOptions, getFfmpegPath } from './src/server/headlessRenderer';
+import { renderHeadlessVideo, HeadlessVideoOptions, getFfmpegPath, getServerGpuStatus } from './src/server/headlessRenderer';
 import { DEFAULT_SETTINGS, COLOR_THEMES } from './src/data/presets';
 
 async function startServer() {
@@ -16,6 +16,7 @@ async function startServer() {
 
   // API 1: Health & Capabilities Check
   app.get('/api/health', (_req, res) => {
+    const gpuStatus = getServerGpuStatus();
     res.json({
       status: 'ok',
       service: 'Waveform Studio Headless Video Generator',
@@ -24,8 +25,10 @@ async function startServer() {
         mp4Export: true,
         transparentAlphaWebm: true,
         fftAnalyzer: true,
-        ffmpegSource: 'npm (ffmpeg-static)',
-        ffmpegBinary: getFfmpegPath(),
+        ffmpegBinary: gpuStatus.ffmpegBinary,
+        hardwareAcceleration: gpuStatus.supportsNvenc ? 'NVIDIA NVENC (GPU)' : 'CPU libx264',
+        hasNvidiaGpu: gpuStatus.hasNvidiaGpu,
+        isColab: gpuStatus.isColab,
       },
       timestamp: new Date().toISOString(),
     });
@@ -33,28 +36,34 @@ async function startServer() {
 
   // API: Server Hardware & Cloud Environment Inspection
   app.get('/api/hardware-environment', (_req, res) => {
+    const gpuStatus = getServerGpuStatus();
     const isCloud = Boolean(
+      gpuStatus.isColab ||
       process.env.K_SERVICE ||
       process.env.GOOGLE_CLOUD_PROJECT ||
-      process.env.COLAB_GPU ||
       process.env.AWS_EXECUTION_ENV ||
       fs.existsSync('/.dockerenv')
     );
     res.json({
-      environment: isCloud ? 'cloud-server' : 'local-pc',
+      environment: gpuStatus.isColab ? 'colab' : isCloud ? 'cloud-server' : 'local-pc',
       os: process.platform,
       cpuArch: process.arch,
       cpuCount: os.cpus().length,
       totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
       freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
       isCloud,
-      gpuCapabilities: {
-        hasColabGpu: Boolean(process.env.COLAB_GPU),
-        encoder: 'ffmpeg-static',
+      isColab: gpuStatus.isColab,
+      gpu: {
+        hasNvidiaGpu: gpuStatus.hasNvidiaGpu,
+        model: gpuStatus.gpuModel,
+        vramMb: gpuStatus.vramMb,
+        driverVersion: gpuStatus.driverVersion,
+        supportsNvenc: gpuStatus.supportsNvenc,
+        activeEncoder: gpuStatus.activeEncoder,
+        ffmpegBinary: gpuStatus.ffmpegBinary,
+        nvencPreset: gpuStatus.nvencPreset,
       },
-      recommendation: isCloud
-        ? 'Cloud container active. If client device has a dedicated GPU (Nvidia/AMD/Apple/Snapdragon), client GPU rendering is recommended for 10x faster export.'
-        : 'Local server environment.',
+      recommendation: gpuStatus.recommendation,
     });
   });
 

@@ -10,59 +10,211 @@ import { OfflineAudioAnalyzer } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
 
 /**
- * Resolves the FFmpeg binary provided by npm package 'ffmpeg-static',
- * falling back to system 'ffmpeg' if unavailable.
+ * GPU & Hardware Acceleration detection for Headless Node.js server.
+ * Accurately probes Google Colab (Tesla T4, A100, V100, L4), Linux, and local environments
+ * to prioritize system FFmpeg with NVENC hardware acceleration over generic static binaries.
  */
-export function getFfmpegPath(): string {
-  const binaryPath = typeof ffmpegStatic === 'string'
-    ? ffmpegStatic
-    : (ffmpegStatic as any)?.default;
-  if (typeof binaryPath === 'string' && fs.existsSync(binaryPath)) {
-    return binaryPath;
-  }
-  return 'ffmpeg';
+export interface ServerGpuStatus {
+  isColab: boolean;
+  hasNvidiaGpu: boolean;
+  gpuModel: string | null;
+  vramMb: number | null;
+  driverVersion: string | null;
+  ffmpegBinary: string;
+  supportsNvenc: boolean;
+  activeEncoder: 'h264_nvenc' | 'libx264';
+  nvencPreset: string;
+  recommendation: string;
 }
 
-let detectedHwaccel: 'nvenc' | 'cpu' | null = null;
+let cachedGpuStatus: ServerGpuStatus | null = null;
 
-function getOptimalH264Encoder(): { encoder: string; extraArgs: string[] } {
-  if (detectedHwaccel === null) {
-    try {
-      const check = spawnSync(getFfmpegPath(), ['-hide_banner', '-encoders']);
-      const output = (check.stdout || '').toString();
-      if (output.includes('h264_nvenc')) {
-        // Test if nvenc can actually initialize on current GPU
-        const testProc = spawnSync(getFfmpegPath(), [
-          '-f', 'lavfi',
-          '-i', 'color=c=black:s=64x64:d=0.04',
-          '-c:v', 'h264_nvenc',
-          '-f', 'null',
-          '-',
-        ]);
-        if (testProc.status === 0) {
-          detectedHwaccel = 'nvenc';
-          console.log('[Headless Renderer] GPU Hardware NVENC acceleration enabled!');
-        } else {
-          detectedHwaccel = 'cpu';
+export function getServerGpuStatus(): ServerGpuStatus {
+  if (cachedGpuStatus) {
+    return cachedGpuStatus;
+  }
+
+  // 1. Detect if running inside Google Colab
+  const isColab = Boolean(
+    process.env.COLAB_GPU !== undefined ||
+    process.env.GCS_READ_CACHE !== undefined ||
+    fs.existsSync('/content') ||
+    fs.existsSync('/colabtools')
+  );
+
+  // 2. Query NVIDIA GPU via nvidia-smi
+  let hasNvidiaGpu = false;
+  let gpuModel: string | null = null;
+  let vramMb: number | null = null;
+  let driverVersion: string | null = null;
+
+  try {
+    const smiRes = spawnSync('nvidia-smi', [
+      '--query-gpu=name,memory.total,driver_version',
+      '--format=csv,noheader,nounits',
+    ]);
+    if (smiRes.status === 0) {
+      const line = (smiRes.stdout || '').toString().trim().split('\n')[0];
+      if (line) {
+        const parts = line.split(',').map((p) => p.trim());
+        if (parts.length >= 2) {
+          hasNvidiaGpu = true;
+          gpuModel = parts[0];
+          vramMb = parseInt(parts[1], 10) || null;
+          driverVersion = parts[2] || null;
         }
-      } else {
-        detectedHwaccel = 'cpu';
+      }
+    }
+  } catch {
+    // nvidia-smi not available or not on path
+  }
+
+  // 3. Find Best FFmpeg Binary (prioritize candidate with working NVENC)
+  const candidates: string[] = [];
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    candidates.push(process.env.FFMPEG_PATH);
+  }
+  candidates.push('ffmpeg');
+  candidates.push('/usr/bin/ffmpeg');
+  candidates.push('/usr/local/bin/ffmpeg');
+
+  const staticPath = typeof ffmpegStatic === 'string'
+    ? ffmpegStatic
+    : (ffmpegStatic as any)?.default;
+  if (typeof staticPath === 'string' && fs.existsSync(staticPath)) {
+    candidates.push(staticPath);
+  }
+
+  let chosenBinary = 'ffmpeg';
+  let supportsNvenc = false;
+  let chosenPreset = 'p1';
+
+  // Test candidates for NVENC support
+  for (const candidate of candidates) {
+    try {
+      const encCheck = spawnSync(candidate, ['-hide_banner', '-encoders']);
+      if (encCheck.status === 0) {
+        const out = (encCheck.stdout || '').toString();
+        if (out.includes('h264_nvenc')) {
+          // Probe if NVENC can actually encode on this system
+          // Try newer SDK preset 'p1' (fastest low-latency)
+          const testP1 = spawnSync(candidate, [
+            '-f', 'lavfi',
+            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-c:v', 'h264_nvenc',
+            '-preset', 'p1',
+            '-tune', 'll',
+            '-f', 'null',
+            '-',
+          ]);
+
+          if (testP1.status === 0) {
+            chosenBinary = candidate;
+            supportsNvenc = true;
+            chosenPreset = 'p1';
+            break;
+          }
+
+          // Fallback to legacy/universal preset 'fast'
+          const testFast = spawnSync(candidate, [
+            '-f', 'lavfi',
+            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-c:v', 'h264_nvenc',
+            '-preset', 'fast',
+            '-tune', 'll',
+            '-f', 'null',
+            '-',
+          ]);
+
+          if (testFast.status === 0) {
+            chosenBinary = candidate;
+            supportsNvenc = true;
+            chosenPreset = 'fast';
+            break;
+          }
+        }
       }
     } catch {
-      detectedHwaccel = 'cpu';
+      // Continue checking next candidate
     }
   }
 
-  if (detectedHwaccel === 'nvenc') {
+  // If NVENC not working, select first working binary for CPU encoding
+  if (!supportsNvenc) {
+    for (const candidate of candidates) {
+      try {
+        const testVer = spawnSync(candidate, ['-version']);
+        if (testVer.status === 0) {
+          chosenBinary = candidate;
+          break;
+        }
+      } catch {}
+    }
+  }
+
+  const activeEncoder = supportsNvenc ? 'h264_nvenc' : 'libx264';
+
+  let recommendation = '';
+  if (supportsNvenc) {
+    recommendation = `Hardware GPU acceleration active (${gpuModel || 'NVIDIA GPU'} via ${activeEncoder}). Best headless settings (1080p @ 60 FPS) enabled for maximum speed.`;
+  } else if (hasNvidiaGpu) {
+    recommendation = `NVIDIA GPU (${gpuModel}) detected, but active FFmpeg binary lacks NVENC support. Falling back to multi-threaded CPU libx264.`;
+  } else if (isColab) {
+    recommendation = `Google Colab CPU runtime active. For 10x faster exports, go to Colab: Runtime > Change runtime type > Select T4 GPU.`;
+  } else {
+    recommendation = `Server CPU multi-threading active with ultrafast preset.`;
+  }
+
+  cachedGpuStatus = {
+    isColab,
+    hasNvidiaGpu,
+    gpuModel,
+    vramMb,
+    driverVersion,
+    ffmpegBinary: chosenBinary,
+    supportsNvenc,
+    activeEncoder,
+    nvencPreset: chosenPreset,
+    recommendation,
+  };
+
+  console.log(`[Hardware Detection] ${recommendation}`);
+  return cachedGpuStatus;
+}
+
+export function getFfmpegPath(): string {
+  return getServerGpuStatus().ffmpegBinary;
+}
+
+function getOptimalH264Encoder(): { encoder: string; extraArgs: string[] } {
+  const status = getServerGpuStatus();
+
+  if (status.supportsNvenc) {
     return {
       encoder: 'h264_nvenc',
-      extraArgs: ['-preset', 'p1', '-tune', 'll', '-rc', 'constqp', '-qp', '22', '-pix_fmt', 'yuv420p'],
+      extraArgs: [
+        '-preset', status.nvencPreset,
+        '-tune', 'll',
+        '-rc', 'vbr',
+        '-cq', '20',
+        '-b:v', '14M',
+        '-maxrate', '24M',
+        '-bufsize', '28M',
+        '-pix_fmt', 'yuv420p',
+      ],
     };
   }
 
   return {
     encoder: 'libx264',
-    extraArgs: ['-preset', 'ultrafast', '-tune', 'fastdecode', '-threads', '0', '-crf', '21', '-bf', '0', '-pix_fmt', 'yuv420p'],
+    extraArgs: [
+      '-preset', 'ultrafast',
+      '-tune', 'fastdecode',
+      '-threads', '0',
+      '-crf', '21',
+      '-bf', '0',
+      '-pix_fmt', 'yuv420p',
+    ],
   };
 }
 
@@ -309,14 +461,15 @@ export async function renderHeadlessVideo(
       mergedSettings.gradientColor = gradientColor;
     }
 
-    // 4. Video Dimension & Timing Constraints
-    let width = options.video?.width || 1280;
-    let height = options.video?.height || 720;
+    // 4. Video Dimension & Timing Constraints (Auto-select Best Settings for Colab / NVENC GPU)
+    const gpuStatus = getServerGpuStatus();
+    let width = options.video?.width || (gpuStatus.supportsNvenc ? 1920 : 1280);
+    let height = options.video?.height || (gpuStatus.supportsNvenc ? 1080 : 720);
     // Ensure even dimensions required by H.264 / VP9 encoders
     width = width - (width % 2);
     height = height - (height % 2);
 
-    const fps = Math.max(15, Math.min(60, options.video?.fps || 30));
+    const fps = Math.max(15, Math.min(60, options.video?.fps || (gpuStatus.supportsNvenc ? 60 : 30)));
     const isTransparent = mergedSettings.backgroundType === 'transparent';
     const format: 'mp4' | 'webm' = options.video?.format || (isTransparent ? 'webm' : 'mp4');
 
