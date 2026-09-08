@@ -97,10 +97,11 @@ export function getServerGpuStatus(): ServerGpuStatus {
         const out = (encCheck.stdout || '').toString();
         if (out.includes('h264_nvenc')) {
           // Probe if NVENC can actually encode on this system
+          // Note: Turing (Tesla T4) and newer NVIDIA architectures require minimum 145x145 for NVENC
           // Try newer SDK preset 'p1' with low-latency tune
           const testP1 = spawnSync(candidate, [
             '-f', 'lavfi',
-            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-i', 'color=c=black:s=256x256:d=0.04',
             '-c:v', 'h264_nvenc',
             '-preset', 'p1',
             '-tune', 'll',
@@ -118,7 +119,7 @@ export function getServerGpuStatus(): ServerGpuStatus {
           // Fallback to universal preset 'fast' with low-latency tune
           const testFast = spawnSync(candidate, [
             '-f', 'lavfi',
-            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-i', 'color=c=black:s=256x256:d=0.04',
             '-c:v', 'h264_nvenc',
             '-preset', 'fast',
             '-tune', 'll',
@@ -136,7 +137,7 @@ export function getServerGpuStatus(): ServerGpuStatus {
           // Fallback: without -tune argument
           const testNoTune = spawnSync(candidate, [
             '-f', 'lavfi',
-            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-i', 'color=c=black:s=256x256:d=0.04',
             '-c:v', 'h264_nvenc',
             '-preset', 'fast',
             '-f', 'null',
@@ -153,7 +154,7 @@ export function getServerGpuStatus(): ServerGpuStatus {
           // Fallback: bare minimum test
           const testBare = spawnSync(candidate, [
             '-f', 'lavfi',
-            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-i', 'color=c=black:s=256x256:d=0.04',
             '-c:v', 'h264_nvenc',
             '-f', 'null',
             '-',
