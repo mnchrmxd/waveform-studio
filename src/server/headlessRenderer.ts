@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
 import { ColorTheme, VisualizerSettings } from '../types';
@@ -21,6 +21,49 @@ export function getFfmpegPath(): string {
     return binaryPath;
   }
   return 'ffmpeg';
+}
+
+let detectedHwaccel: 'nvenc' | 'cpu' | null = null;
+
+function getOptimalH264Encoder(): { encoder: string; extraArgs: string[] } {
+  if (detectedHwaccel === null) {
+    try {
+      const check = spawnSync(getFfmpegPath(), ['-hide_banner', '-encoders']);
+      const output = (check.stdout || '').toString();
+      if (output.includes('h264_nvenc')) {
+        // Test if nvenc can actually initialize on current GPU
+        const testProc = spawnSync(getFfmpegPath(), [
+          '-f', 'lavfi',
+          '-i', 'color=c=black:s=64x64:d=0.04',
+          '-c:v', 'h264_nvenc',
+          '-f', 'null',
+          '-',
+        ]);
+        if (testProc.status === 0) {
+          detectedHwaccel = 'nvenc';
+          console.log('[Headless Renderer] GPU Hardware NVENC acceleration enabled!');
+        } else {
+          detectedHwaccel = 'cpu';
+        }
+      } else {
+        detectedHwaccel = 'cpu';
+      }
+    } catch {
+      detectedHwaccel = 'cpu';
+    }
+  }
+
+  if (detectedHwaccel === 'nvenc') {
+    return {
+      encoder: 'h264_nvenc',
+      extraArgs: ['-preset', 'p1', '-tune', 'll', '-rc', 'constqp', '-qp', '22', '-pix_fmt', 'yuv420p'],
+    };
+  }
+
+  return {
+    encoder: 'libx264',
+    extraArgs: ['-preset', 'ultrafast', '-tune', 'fastdecode', '-threads', '0', '-crf', '21', '-bf', '0', '-pix_fmt', 'yuv420p'],
+  };
 }
 
 // Polyfill OffscreenCanvas for Node.js if not present
@@ -332,14 +375,11 @@ export async function renderHeadlessVideo(
         outputPath
       );
     } else {
-      // Standard H.264 MP4 (ultrafast multi-threaded CPU rendering)
+      // Hardware-accelerated NVENC (GPU) or Ultrafast Multi-threaded CPU libx264
+      const opt = getOptimalH264Encoder();
       ffmpegArgs.push(
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'fastdecode',
-        '-threads', '0',
-        '-crf', '21',
-        '-pix_fmt', 'yuv420p',
+        '-c:v', opt.encoder,
+        ...opt.extraArgs,
         '-c:a', 'aac',
         '-b:a', '192k',
         '-shortest',

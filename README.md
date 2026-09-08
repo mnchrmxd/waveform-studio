@@ -24,7 +24,9 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
      - Zero dropped frames via active backpressure pacing and quality latency modes on both desktop and mobile devices.
   2. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
      - Server-side headless rendering utilizing Node.js `@napi-rs/canvas` and `ffmpeg-static` (`ultrafast` / `realtime` presets).
-     - Generates zero client memory load; suitable for low-spec client hardware or automated worker scripts.
+     - **Hardware Acceleration**: Automatic GPU NVENC hardware encoding detection with multi-threaded CPU fallback (`libx264`).
+     - **Ultra-Fast Cold Start**: Supports `HEADLESS_ONLY=true` to skip Vite bundling in Google Colab, CLI pipelines, and cloud containers.
+     - Generates zero client memory load; ideal for automated worker scripts, Colab, or CI/CD pipelines.
      - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active, cloud server rendering is automatically disabled with visual notice, seamlessly routing exports through the Client GPU engine.
   3. **Alpha Channel Transparency**:
      - Export transparent WebM videos (`libvpx-vp9` with `yuva420p` pixel format) for direct overlay in video editors such as Premiere Pro, DaVinci Resolve, Final Cut, and OBS Studio.

@@ -699,7 +699,8 @@ function renderMirroredBars(
 
   ctx.save();
   if (glow > 0) {
-    ctx.shadowBlur = 10 * glow;
+    ctx.shadowBlur = 8 * glow;
+    ctx.shadowColor = primaryCol;
   }
 
   const avatarRadius = isProfileActive
@@ -1014,7 +1015,8 @@ function renderBarsUp(
 
   ctx.save();
   if (glow > 0) {
-    ctx.shadowBlur = 10 * glow;
+    ctx.shadowBlur = 8 * glow;
+    ctx.shadowColor = primaryCol;
   }
 
   const avatarRadius = isProfileActive

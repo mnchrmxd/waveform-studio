@@ -463,8 +463,10 @@ async function startServer() {
   app.post('/api/render-headless', handleRenderVideo);
   app.post('/api/generate-video', handleRenderVideo);
 
-  // Vite middleware setup
-  if (process.env.NODE_ENV !== 'production') {
+  // Vite middleware setup (skipped in HEADLESS_ONLY mode for instantaneous cold start in Colab/containers)
+  if (process.env.HEADLESS_ONLY === 'true') {
+    console.log('[Server] Headless mode enabled: Skipping Vite middleware for instantaneous start.');
+  } else if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
