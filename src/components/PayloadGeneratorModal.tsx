@@ -5,12 +5,15 @@ import {
   Check,
   Terminal,
   Code2,
+  FileCode2,
   Play,
   CheckCircle2,
   AlertCircle,
   Loader2,
+  X,
+  Layers,
   Sparkles,
-  ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { ColorTheme, VisualizerSettings } from '../types';
 import { audioBufferToWavBlob } from '../services/fastVideoExporter';
@@ -60,15 +63,9 @@ export const PayloadGeneratorModal: React.FC<PayloadGeneratorModalProps> = ({
 }) => {
   // The user requested NO MORE EDITS beyond the format (cURL, JSON, Node)
   const { isCloudAvailable } = useCloudStatus();
-  const [activeFormat, setActiveFormat] = useState<'curl' | 'json'>('curl');
+  const [activeFormat, setActiveFormat] = useState<'curl' | 'json' | 'node'>('curl');
   const [copied, setCopied] = useState(false);
   const [isServerRendering, setIsServerRendering] = useState(false);
-  const [renderProgress, setRenderProgress] = useState<{
-    percentage: number;
-    currentFrame?: number;
-    totalFrames?: number;
-    fps?: number;
-  } | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
 
@@ -393,9 +390,87 @@ curl -X POST http://localhost:3000/api/render-video \\
   --output visualizer.${exportConfig.format}`;
   }, [payloadObject, exportConfig.format]);
 
+  // Node.js representation
+  const nodeCode = useMemo(() => {
+    return `// render-visualizer.mjs
+// Run with: node render-visualizer.mjs
+import fs from 'fs';
+
+const payload = ${JSON.stringify(payloadObject, null, 2)};
+
+async function renderVisualizer() {
+  console.log('Rendering visualizer video headlessly on server...');
+  const startTime = Date.now();
+
+  const response = await fetch('http://localhost:3000/api/render-video', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(\`Server returned \${response.status}: \${errorText}\`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const fileName = 'visualizer.${exportConfig.format}';
+  fs.writeFileSync(fileName, Buffer.from(arrayBuffer));
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const sizeMb = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+  console.log(\`Done in \${elapsed}s! Saved \${fileName} (\${sizeMb} MB)\`);
+}
+
+renderVisualizer().catch(console.error);`;
+  }, [payloadObject, exportConfig.format]);
+
+  // Display Node.js representation
+  const displayNodeCode = useMemo(() => {
+    const preview = JSON.parse(JSON.stringify(payloadObject));
+    if (preview.audio && preview.audio.startsWith('data:') && preview.audio.length > 80) {
+      preview.audio = `${preview.audio.substring(0, 48)}... [base64 audio truncated]`;
+    }
+    return `// render-visualizer.mjs
+// Run with: node render-visualizer.mjs
+import fs from 'fs';
+
+const payload = ${JSON.stringify(preview, null, 2)};
+
+async function renderVisualizer() {
+  console.log('Rendering visualizer video headlessly on server...');
+  const startTime = Date.now();
+
+  const response = await fetch('http://localhost:3000/api/render-video', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(\`Server returned \${response.status}: \${errorText}\`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const fileName = 'visualizer.${exportConfig.format}';
+  fs.writeFileSync(fileName, Buffer.from(arrayBuffer));
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const sizeMb = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+  console.log(\`Done in \${elapsed}s! Saved \${fileName} (\${sizeMb} MB)\`);
+}
+
+renderVisualizer().catch(console.error);`;
+  }, [payloadObject, exportConfig.format]);
+
   // Copy handler
   const handleCopy = () => {
-    const content = activeFormat === 'json' ? fullJsonString : curlCode;
+    let content = '';
+    if (activeFormat === 'json') content = fullJsonString;
+    else if (activeFormat === 'curl') content = curlCode;
+    else if (activeFormat === 'node') content = nodeCode;
+
     navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -411,10 +486,14 @@ curl -X POST http://localhost:3000/api/render-video \\
       content = fullJsonString;
       fileName = 'visualizer-payload.json';
       mimeType = 'application/json';
-    } else {
+    } else if (activeFormat === 'curl') {
       content = curlCode;
       fileName = 'render-visualizer.sh';
       mimeType = 'application/x-sh';
+    } else {
+      content = nodeCode;
+      fileName = 'render-visualizer.mjs';
+      mimeType = 'application/javascript';
     }
 
     const blob = new Blob([content], { type: mimeType });
@@ -433,32 +512,12 @@ curl -X POST http://localhost:3000/api/render-video \\
     setIsServerRendering(true);
     setServerError(null);
     setServerSuccess(null);
-    setRenderProgress({ percentage: 0 });
-
-    const testJobId = `test_run_${Date.now()}`;
-    let sse: EventSource | null = null;
 
     try {
-      // Connect to SSE for real-time progress events
-      sse = new EventSource(`/api/render-progress/${testJobId}`);
-      sse.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (typeof data.progress === 'number') {
-            setRenderProgress({
-              percentage: data.progress,
-              currentFrame: data.currentFrame,
-              totalFrames: data.totalFrames,
-              fps: data.fps,
-            });
-          }
-        } catch {}
-      };
-
-      const response = await fetch(`/api/render-video?jobId=${testJobId}`, {
+      const response = await fetch('/api/render-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payloadObject, jobId: testJobId }),
+        body: JSON.stringify(payloadObject),
       });
 
       if (!response.ok) {
@@ -480,8 +539,6 @@ curl -X POST http://localhost:3000/api/render-video \\
     } catch (err: any) {
       setServerError(err?.message || 'Server rendering failed.');
     } finally {
-      if (sse) sse.close();
-      setRenderProgress(null);
       setIsServerRendering(false);
     }
   };
@@ -492,18 +549,73 @@ curl -X POST http://localhost:3000/api/render-video \\
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-3xl bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800 bg-neutral-900/60">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-900/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-cyan-500/20">
-              <Terminal className="w-3.5 h-3.5" />
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+              <Terminal className="w-4 h-4" />
             </div>
-            <h2 className="font-display font-bold text-sm text-white">Payload Generator</h2>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display font-bold text-base text-white">REST API Payload Generator</h3>
+                <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/40">
+                  HEADLESS
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                All parameters automatically inherited from current main canvas & export settings
+              </p>
+            </div>
           </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Format Selector Bar (cURL, JSON) & Colab */}
-        <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-neutral-800/80 bg-neutral-950">
-          <div className="flex items-center gap-1 p-1 bg-neutral-900 rounded-xl border border-neutral-800">
+        {/* Inherited Parameters Summary Row (Zero redundant inputs!) */}
+        <div className="px-5 py-2.5 bg-neutral-900/40 border-b border-neutral-800 flex items-center gap-2 overflow-x-auto text-[11px] text-neutral-300 font-mono">
+          <span className="text-neutral-500 uppercase tracking-wider font-sans font-bold text-[10px]">Inherited:</span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
+            📐 {exportConfig.width}×{exportConfig.height} @ {exportConfig.fps}fps
+          </span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap uppercase">
+            🎞️ {exportConfig.format}
+          </span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
+            🎵 {audioBuffer ? `Full Audio (${audioBuffer.duration.toFixed(1)}s)` : 'Full Audio Track'}
+          </span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
+            📊 {settings.style} ({settings.barCount} bars)
+          </span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
+            🔗 Joint: {settings.enableJoint ? `On (${settings.jointWidth}%)` : 'Off'}
+          </span>
+          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 whitespace-nowrap">
+            🎨 {theme.name}
+          </span>
+          {effectiveAudioUrl && (
+            <span className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 whitespace-nowrap">
+              🔗 Audio: URL Export
+            </span>
+          )}
+          {effectiveProfileUrl && settings.showProfileImage && (
+            <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-700/60 text-amber-300 whitespace-nowrap">
+              🖼️ Profile: URL Export
+            </span>
+          )}
+          {effectiveBackgroundUrl && settings.backgroundType !== 'transparent' && (
+            <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-700/60 text-purple-300 whitespace-nowrap">
+              🌌 Backdrop: URL Export
+            </span>
+          )}
+        </div>
+
+        {/* Format Selector Bar (cURL, JSON, Node.js) */}
+        <div className="px-5 pt-3 pb-2 flex items-center justify-between gap-3 border-b border-neutral-800/80 bg-neutral-950">
+          <div className="flex items-center gap-1.5 p-1 bg-neutral-900 rounded-xl border border-neutral-800">
             <button
               id="payload-format-curl-btn"
               onClick={() => setActiveFormat('curl')}
@@ -528,109 +640,65 @@ curl -X POST http://localhost:3000/api/render-video \\
               <Code2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>JSON</span>
             </button>
+            <button
+              id="payload-format-node-btn"
+              onClick={() => setActiveFormat('node')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeFormat === 'node'
+                  ? 'bg-neutral-800 text-white shadow-sm border border-neutral-700'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <FileCode2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Node.js Script</span>
+            </button>
           </div>
 
-          <div className="flex items-center p-1 bg-neutral-900 rounded-xl border border-neutral-800">
-            <a
-              id="open-in-colab-btn"
-              href="https://colab.research.google.com/github/mnchrmXD/waveform-studio/blob/main/waveform_studio.ipynb"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-neutral-300 hover:text-amber-300 hover:bg-neutral-800 transition-all cursor-pointer"
-              title="Open waveform_studio.ipynb in Google Colab (mnchrmXD/waveform-studio)"
+          <div className="flex items-center gap-2">
+            <button
+              id="copy-payload-btn"
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Colab</span>
-              <ExternalLink className="w-3 h-3 text-neutral-400" />
-            </a>
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Copy {activeFormat.toUpperCase()}</span>
+                </>
+              )}
+            </button>
+
+            <button
+              id="download-payload-file-btn"
+              onClick={handleDownloadFile}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Save File</span>
+            </button>
           </div>
         </div>
 
         {/* Code Box Area */}
-        <div className="flex-1 overflow-hidden p-5 bg-neutral-950 flex flex-col gap-3 min-h-[300px]">
-          <div className="flex-1 flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/60 overflow-hidden shadow-inner">
-            {/* Code Box Header with file label & action buttons */}
-            <div className="px-4 py-2.5 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2 font-mono text-[11px] text-neutral-300">
-                {activeFormat === 'curl' ? (
-                  <>
-                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>curl_render.sh</span>
-                  </>
-                ) : (
-                  <>
-                    <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>payload.json</span>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="download-payload-file-btn"
-                  onClick={handleDownloadFile}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Save payload to file"
-                >
-                  <Download className="w-3 h-3 text-neutral-400" />
-                  <span>Save</span>
-                </button>
-
-                <button
-                  id="copy-payload-btn"
-                  onClick={handleCopy}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Copy code to clipboard"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400 font-semibold">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 text-neutral-400" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Code Content */}
-            <div className="flex-1 p-4 font-mono text-xs overflow-auto text-neutral-300 leading-relaxed select-all">
-              <pre>
-                <code>
-                  {activeFormat === 'curl' ? displayCurlCode : displayJsonString}
-                </code>
-              </pre>
-            </div>
+        <div className="flex-1 overflow-y-auto p-5 bg-neutral-950 flex flex-col gap-3">
+          <div className="relative rounded-xl border border-neutral-800 bg-neutral-900/80 p-4 font-mono text-xs overflow-x-auto text-neutral-300 leading-relaxed max-h-[44vh] select-all shadow-inner">
+            <pre>
+              <code>
+                {activeFormat === 'curl'
+                  ? displayCurlCode
+                  : activeFormat === 'json'
+                  ? displayJsonString
+                  : displayNodeCode}
+              </code>
+            </pre>
           </div>
 
-          {/* Feedback alerts & Progress */}
-          {renderProgress && (
-            <div id="server-render-progress" className="p-3.5 bg-neutral-900 border border-neutral-800 rounded-xl space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-cyan-400 flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                  Rendering Video... {renderProgress.percentage}%
-                </span>
-                <span className="text-neutral-400 font-mono text-[11px]">
-                  {renderProgress.currentFrame && renderProgress.totalFrames
-                    ? `${renderProgress.currentFrame} / ${renderProgress.totalFrames} frames`
-                    : ''}
-                  {renderProgress.fps ? ` • ${renderProgress.fps} fps` : ''}
-                </span>
-              </div>
-              <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-150"
-                  style={{ width: `${Math.max(2, renderProgress.percentage)}%` }}
-                />
-              </div>
-            </div>
-          )}
-
+          {/* Feedback alerts */}
           {serverSuccess && (
             <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex items-center gap-2 text-emerald-300 text-xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -648,38 +716,45 @@ curl -X POST http://localhost:3000/api/render-video \\
 
         {/* Footer */}
         <div className="px-5 py-3.5 border-t border-neutral-800 bg-neutral-900/60 flex items-center justify-between gap-3">
-          <button
-            id="payload-modal-back-btn"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs font-medium text-neutral-300 hover:text-white transition-colors cursor-pointer border border-neutral-800 hover:border-neutral-700"
-          >
-            Back
-          </button>
+          <div className="text-xs text-neutral-400 flex items-center gap-1.5">
+            <span className="font-mono text-cyan-400 font-medium">POST /api/render-video</span>
+            <span className="hidden sm:inline text-neutral-500">• Ready for headless automation & CI/CD</span>
+          </div>
 
-          {/* Test Run Server Render Button */}
-          <button
-            id="test-server-render-btn"
-            onClick={handleServerTestRun}
-            disabled={isServerRendering || isPreparingAssets || !isCloudAvailable}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 ring-1 ring-cyan-400/30 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title={
-              !isCloudAvailable
-                ? 'Node.js backend server is not available in this environment'
-                : 'Executes the POST request against local FFmpeg backend right now'
-            }
-          >
-            {isServerRendering ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>FFmpeg Rendering...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{isCloudAvailable ? 'Test Run on Server' : 'Server Unavailable'}</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="flex items-center gap-1 px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Export</span>
+            </button>
+
+            {/* Test Run Server Render Button */}
+            <button
+              id="test-server-render-btn"
+              onClick={handleServerTestRun}
+              disabled={isServerRendering || isPreparingAssets || !isCloudAvailable}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title={
+                !isCloudAvailable
+                  ? 'Node.js backend server is not available in this environment'
+                  : 'Executes the POST request against local FFmpeg backend right now'
+              }
+            >
+              {isServerRendering ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>FFmpeg Rendering...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{isCloudAvailable ? 'Test Run on Server' : 'Server Unavailable'}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

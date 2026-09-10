@@ -62,6 +62,12 @@ export function getVisualizerGradient(
       grad.addColorStop(1, gradientCol);
       return grad;
     }
+    case 'bottom-to-top': {
+      const grad = ctx.createLinearGradient(0, y + height, 0, y);
+      grad.addColorStop(0, primaryCol);
+      grad.addColorStop(1, gradientCol);
+      return grad;
+    }
     case 'inside-out-horizontal': {
       const grad = ctx.createLinearGradient(x, 0, x + width, 0);
       const centerFrac =
@@ -693,8 +699,7 @@ function renderMirroredBars(
 
   ctx.save();
   if (glow > 0) {
-    ctx.shadowBlur = 8 * glow;
-    ctx.shadowColor = primaryCol;
+    ctx.shadowBlur = 10 * glow;
   }
 
   const avatarRadius = isProfileActive
@@ -1009,8 +1014,7 @@ function renderBarsUp(
 
   ctx.save();
   if (glow > 0) {
-    ctx.shadowBlur = 8 * glow;
-    ctx.shadowColor = primaryCol;
+    ctx.shadowBlur = 10 * glow;
   }
 
   const avatarRadius = isProfileActive

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
 import { ColorTheme, VisualizerSettings } from '../types';
@@ -10,268 +10,17 @@ import { OfflineAudioAnalyzer } from '../services/fftAnalyzer';
 import { renderVisualizerFrame } from '../services/visualizerRenderer';
 
 /**
- * GPU & Hardware Acceleration detection for Headless Node.js server.
- * Accurately probes Google Colab (Tesla T4, A100, V100, L4), Linux, and local environments
- * to prioritize system FFmpeg with NVENC hardware acceleration over generic static binaries.
+ * Resolves the FFmpeg binary provided by npm package 'ffmpeg-static',
+ * falling back to system 'ffmpeg' if unavailable.
  */
-export interface ServerGpuStatus {
-  isColab: boolean;
-  hasNvidiaGpu: boolean;
-  gpuModel: string | null;
-  vramMb: number | null;
-  driverVersion: string | null;
-  ffmpegBinary: string;
-  supportsNvenc: boolean;
-  activeEncoder: 'h264_nvenc' | 'libx264';
-  nvencPreset: string;
-  recommendation: string;
-}
-
-let cachedGpuStatus: ServerGpuStatus | null = null;
-
-export function getServerGpuStatus(): ServerGpuStatus {
-  if (cachedGpuStatus) {
-    return cachedGpuStatus;
-  }
-
-  // 1. Detect if running inside Google Colab
-  const isColab = Boolean(
-    process.env.COLAB_GPU !== undefined ||
-    process.env.GCS_READ_CACHE !== undefined ||
-    fs.existsSync('/content') ||
-    fs.existsSync('/colabtools')
-  );
-
-  // 2. Query NVIDIA GPU via nvidia-smi
-  let hasNvidiaGpu = false;
-  let gpuModel: string | null = null;
-  let vramMb: number | null = null;
-  let driverVersion: string | null = null;
-
-  try {
-    const smiRes = spawnSync('nvidia-smi', [
-      '--query-gpu=name,memory.total,driver_version',
-      '--format=csv,noheader,nounits',
-    ]);
-    if (smiRes.status === 0) {
-      const line = (smiRes.stdout || '').toString().trim().split('\n')[0];
-      if (line) {
-        const parts = line.split(',').map((p) => p.trim());
-        if (parts.length >= 2) {
-          hasNvidiaGpu = true;
-          gpuModel = parts[0];
-          vramMb = parseInt(parts[1], 10) || null;
-          driverVersion = parts[2] || null;
-        }
-      }
-    }
-  } catch {
-    // nvidia-smi not available or not on path
-  }
-
-  // 3. Find Best FFmpeg Binary (prioritize candidate with working NVENC)
-  const rawCandidates: string[] = [];
-  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
-    rawCandidates.push(process.env.FFMPEG_PATH);
-  }
-  if (fs.existsSync('/usr/local/bin/ffmpeg')) {
-    rawCandidates.push('/usr/local/bin/ffmpeg');
-  }
-  if (fs.existsSync('/usr/bin/ffmpeg')) {
-    rawCandidates.push('/usr/bin/ffmpeg');
-  }
-  rawCandidates.push('ffmpeg');
-
-  const staticPath = typeof ffmpegStatic === 'string'
+export function getFfmpegPath(): string {
+  const binaryPath = typeof ffmpegStatic === 'string'
     ? ffmpegStatic
     : (ffmpegStatic as any)?.default;
-  if (typeof staticPath === 'string' && fs.existsSync(staticPath)) {
-    rawCandidates.push(staticPath);
+  if (typeof binaryPath === 'string' && fs.existsSync(binaryPath)) {
+    return binaryPath;
   }
-
-  // Deduplicate candidates (resolving symlinks if existing file)
-  const candidates: string[] = [];
-  const seenPaths = new Set<string>();
-  for (const c of rawCandidates) {
-    let resolved = c;
-    try {
-      if (fs.existsSync(c)) {
-        resolved = fs.realpathSync(c);
-      }
-    } catch {}
-    if (!seenPaths.has(resolved)) {
-      seenPaths.add(resolved);
-      candidates.push(c);
-    }
-  }
-
-  let chosenBinary = 'ffmpeg';
-  let supportsNvenc = false;
-  let chosenPreset = 'p1';
-
-  // Only probe NVENC if an NVIDIA GPU was physically detected on this host
-  if (hasNvidiaGpu) {
-    for (const candidate of candidates) {
-      try {
-        const encCheck = spawnSync(candidate, ['-hide_banner', '-encoders']);
-        if (encCheck.status === 0) {
-          const out = (encCheck.stdout || '').toString();
-          if (out.includes('h264_nvenc')) {
-            // Probe if NVENC can actually encode on this system
-            // Note: Turing (Tesla T4) and newer NVIDIA architectures require minimum 145x145 for NVENC
-            // Try newer SDK preset 'p1' with low-latency tune
-            const testP1 = spawnSync(candidate, [
-              '-f', 'lavfi',
-              '-i', 'color=c=black:s=256x256:d=0.04',
-              '-c:v', 'h264_nvenc',
-              '-preset', 'p1',
-              '-tune', 'll',
-              '-f', 'null',
-              '-',
-            ]);
-
-            if (testP1.status === 0) {
-              chosenBinary = candidate;
-              supportsNvenc = true;
-              chosenPreset = 'p1';
-              break;
-            }
-
-            // Fallback to universal preset 'fast' with low-latency tune
-            const testFast = spawnSync(candidate, [
-              '-f', 'lavfi',
-              '-i', 'color=c=black:s=256x256:d=0.04',
-              '-c:v', 'h264_nvenc',
-              '-preset', 'fast',
-              '-tune', 'll',
-              '-f', 'null',
-              '-',
-            ]);
-
-            if (testFast.status === 0) {
-              chosenBinary = candidate;
-              supportsNvenc = true;
-              chosenPreset = 'fast';
-              break;
-            }
-
-            // Fallback: without -tune argument
-            const testNoTune = spawnSync(candidate, [
-              '-f', 'lavfi',
-              '-i', 'color=c=black:s=256x256:d=0.04',
-              '-c:v', 'h264_nvenc',
-              '-preset', 'fast',
-              '-f', 'null',
-              '-',
-            ]);
-
-            if (testNoTune.status === 0) {
-              chosenBinary = candidate;
-              supportsNvenc = true;
-              chosenPreset = 'fast';
-              break;
-            }
-
-            // Fallback: bare minimum test
-            const testBare = spawnSync(candidate, [
-              '-f', 'lavfi',
-              '-i', 'color=c=black:s=256x256:d=0.04',
-              '-c:v', 'h264_nvenc',
-              '-f', 'null',
-              '-',
-            ]);
-
-            if (testBare.status === 0) {
-              chosenBinary = candidate;
-              supportsNvenc = true;
-              chosenPreset = 'default';
-              break;
-            }
-          }
-        }
-      } catch {
-        // Continue checking next candidate
-      }
-    }
-  }
-
-  // If NVENC not working, select first working binary for CPU encoding
-  if (!supportsNvenc) {
-    for (const candidate of candidates) {
-      try {
-        const testVer = spawnSync(candidate, ['-version']);
-        if (testVer.status === 0) {
-          chosenBinary = candidate;
-          break;
-        }
-      } catch {}
-    }
-  }
-
-  const activeEncoder = supportsNvenc ? 'h264_nvenc' : 'libx264';
-
-  let recommendation = '';
-  if (supportsNvenc) {
-    recommendation = `Hardware GPU acceleration active (${gpuModel || 'NVIDIA GPU'} via ${activeEncoder}). Best headless settings (1080p @ 60 FPS) enabled for maximum speed.`;
-  } else if (hasNvidiaGpu) {
-    recommendation = `NVIDIA GPU (${gpuModel}) detected, but active FFmpeg binary lacks NVENC support. Falling back to multi-threaded CPU libx264.`;
-  } else if (isColab) {
-    recommendation = `Google Colab CPU runtime active. For 10x faster exports, go to Colab: Runtime > Change runtime type > Select T4 GPU.`;
-  } else {
-    recommendation = `Server CPU multi-threading active with ultrafast preset.`;
-  }
-
-  cachedGpuStatus = {
-    isColab,
-    hasNvidiaGpu,
-    gpuModel,
-    vramMb,
-    driverVersion,
-    ffmpegBinary: chosenBinary,
-    supportsNvenc,
-    activeEncoder,
-    nvencPreset: chosenPreset,
-    recommendation,
-  };
-
-  console.log(`[Hardware Detection] ${recommendation}`);
-  return cachedGpuStatus;
-}
-
-export function getFfmpegPath(): string {
-  return getServerGpuStatus().ffmpegBinary;
-}
-
-function getOptimalH264Encoder(): { encoder: string; extraArgs: string[] } {
-  const status = getServerGpuStatus();
-
-  if (status.supportsNvenc) {
-    return {
-      encoder: 'h264_nvenc',
-      extraArgs: [
-        '-preset', status.nvencPreset,
-        '-tune', 'll',
-        '-rc', 'vbr',
-        '-cq', '20',
-        '-b:v', '14M',
-        '-maxrate', '24M',
-        '-bufsize', '28M',
-        '-pix_fmt', 'yuv420p',
-      ],
-    };
-  }
-
-  return {
-    encoder: 'libx264',
-    extraArgs: [
-      '-preset', 'ultrafast',
-      '-tune', 'fastdecode',
-      '-threads', '0',
-      '-crf', '21',
-      '-bf', '0',
-      '-pix_fmt', 'yuv420p',
-    ],
-  };
+  return 'ffmpeg';
 }
 
 // Polyfill OffscreenCanvas for Node.js if not present
@@ -298,7 +47,6 @@ export interface HeadlessVideoOptions {
   };
   profileImage?: string | Buffer; // Base64 data URI, URL, or Buffer
   backgroundImage?: string | Buffer; // Base64 data URI, URL, or Buffer
-  abortSignal?: AbortSignal; // Client/caller cancellation signal
   onProgress?: (
     progress: number,
     meta?: {
@@ -438,10 +186,6 @@ export async function renderHeadlessVideo(
     const audioInputPath = await prepareAudioFile(options.audio, options.audioUrl, tempDir);
 
     // 2. Decode Audio into Raw 32-bit Float PCM via FFmpeg
-    if (options.abortSignal?.aborted) {
-      throw new Error('Server render canceled by client');
-    }
-
     const pcmPath = path.join(tempDir, 'audio.raw');
     await new Promise<void>((resolve, reject) => {
       const decodeProc = spawn(getFfmpegPath(), [
@@ -453,41 +197,16 @@ export async function renderHeadlessVideo(
         pcmPath,
       ]);
 
-      const onAbort = () => {
-        try { decodeProc.kill('SIGKILL'); } catch {}
-        const err = new Error('Server render canceled by client');
-        err.name = 'AbortError';
-        reject(err);
-      };
-      if (options.abortSignal) {
-        options.abortSignal.addEventListener('abort', onAbort, { once: true });
-      }
-
       let stderr = '';
       decodeProc.stderr.on('data', (d) => {
         stderr += d.toString();
       });
 
       decodeProc.on('close', (code) => {
-        if (options.abortSignal) {
-          options.abortSignal.removeEventListener('abort', onAbort);
-        }
-        if (options.abortSignal?.aborted) {
-          const err = new Error('Server render canceled by client');
-          err.name = 'AbortError';
-          reject(err);
-        } else if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`FFmpeg audio decode failed (code ${code}): ${stderr}`));
-        }
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg audio decode failed (code ${code}): ${stderr}`));
       });
-      decodeProc.on('error', (err) => {
-        if (options.abortSignal) {
-          options.abortSignal.removeEventListener('abort', onAbort);
-        }
-        reject(err);
-      });
+      decodeProc.on('error', reject);
     });
 
     const pcmBuf = fs.readFileSync(pcmPath);
@@ -547,15 +266,14 @@ export async function renderHeadlessVideo(
       mergedSettings.gradientColor = gradientColor;
     }
 
-    // 4. Video Dimension & Timing Constraints (Auto-select Best Settings for Colab / NVENC GPU)
-    const gpuStatus = getServerGpuStatus();
-    let width = options.video?.width || (gpuStatus.supportsNvenc ? 1920 : 1280);
-    let height = options.video?.height || (gpuStatus.supportsNvenc ? 1080 : 720);
+    // 4. Video Dimension & Timing Constraints
+    let width = options.video?.width || 1280;
+    let height = options.video?.height || 720;
     // Ensure even dimensions required by H.264 / VP9 encoders
     width = width - (width % 2);
     height = height - (height % 2);
 
-    const fps = Math.max(15, Math.min(60, options.video?.fps || (gpuStatus.supportsNvenc ? 60 : 30)));
+    const fps = Math.max(15, Math.min(60, options.video?.fps || 30));
     const isTransparent = mergedSettings.backgroundType === 'transparent';
     const format: 'mp4' | 'webm' = options.video?.format || (isTransparent ? 'webm' : 'mp4');
 
@@ -614,11 +332,14 @@ export async function renderHeadlessVideo(
         outputPath
       );
     } else {
-      // Hardware-accelerated NVENC (GPU) or Ultrafast Multi-threaded CPU libx264
-      const opt = getOptimalH264Encoder();
+      // Standard H.264 MP4 (ultrafast multi-threaded CPU rendering)
       ffmpegArgs.push(
-        '-c:v', opt.encoder,
-        ...opt.extraArgs,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-tune', 'fastdecode',
+        '-threads', '0',
+        '-crf', '21',
+        '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
         '-shortest',
@@ -632,35 +353,12 @@ export async function renderHeadlessVideo(
       ffmpegStderr += data.toString();
     });
 
-    const onAbortFfmpeg = () => {
-      try { ffmpeg.stdin.destroy(); } catch {}
-      try { ffmpeg.kill('SIGKILL'); } catch {}
-    };
-    if (options.abortSignal) {
-      options.abortSignal.addEventListener('abort', onAbortFfmpeg, { once: true });
-    }
-
     const ffmpegPromise = new Promise<void>((resolve, reject) => {
       ffmpeg.on('close', (code) => {
-        if (options.abortSignal) {
-          options.abortSignal.removeEventListener('abort', onAbortFfmpeg);
-        }
-        if (options.abortSignal?.aborted) {
-          const err = new Error('Server render canceled by client');
-          err.name = 'AbortError';
-          reject(err);
-        } else if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`FFmpeg video encoding failed (code ${code}): ${ffmpegStderr.slice(-400)}`));
-        }
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg video encoding failed (code ${code}): ${ffmpegStderr.slice(-400)}`));
       });
-      ffmpeg.on('error', (err) => {
-        if (options.abortSignal) {
-          options.abortSignal.removeEventListener('abort', onAbortFfmpeg);
-        }
-        reject(err);
-      });
+      ffmpeg.on('error', reject);
     });
 
     // 8. Render Frames Loop
@@ -672,13 +370,6 @@ export async function renderHeadlessVideo(
     let currentFps = fps;
 
     for (let f = 0; f < totalFrames; f++) {
-      if (options.abortSignal?.aborted) {
-        onAbortFfmpeg();
-        const cancelErr = new Error('Server render canceled by client');
-        cancelErr.name = 'AbortError';
-        throw cancelErr;
-      }
-
       const time = f / fps;
       const spectrum = analyzer.getSpectrumAtTime(
         time,
@@ -732,13 +423,6 @@ export async function renderHeadlessVideo(
         lastReportTime = now;
         framesSinceReport = 0;
       }
-    }
-
-    if (options.abortSignal?.aborted) {
-      onAbortFfmpeg();
-      const cancelErr = new Error('Server render canceled by client');
-      cancelErr.name = 'AbortError';
-      throw cancelErr;
     }
 
     ffmpeg.stdin.end();

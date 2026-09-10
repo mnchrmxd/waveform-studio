@@ -17,24 +17,18 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
   - **Social Media Aspect Ratio Presets**: `16:9` (YouTube / Landscape), `9:16` (TikTok / Reels / Shorts), `1:1` (Instagram Feed), `21:9` (Cinematic Ultrawide), `3:1` (Banner), and `responsive`.
   - **Audio Input Options**: Local file upload (MP3, WAV, AAC, FLAC, OGG), remote URL streaming via built-in CORS proxy, pre-synthesized demo tracks, or live microphone capture.
 
-- **Dual Rendering Paradigms & Hardware Environment Optimization**:
+- **Dual Rendering Paradigms & Export Engines**:
   1. **Client GPU Engine (WebCodecs)**:
      - Modern in-browser rendering utilizing hardware-accelerated WebCodecs (`VideoEncoder`) paired with `mp4-muxer` and `webm-muxer`, falling back to `MediaRecorder`.
      - Operates entirely client-side; fully functional in offline environments or static hosting without requiring a Node.js server.
-     - Zero dropped frames via hardware-adaptive backpressure pacing and quality latency modes on both desktop and mobile devices.
-  2. **Hardware Environment & GPU Detection**:
-     - Automatically profiles the host environment (Local PC, Mobile, or Cloud Server) and GPU hardware (NVIDIA GeForce/RTX, AMD Radeon, Intel Iris/Arc, Qualcomm Snapdragon / Adreno, Apple Silicon M-series).
-     - Dynamically computes optimal resolution, framerate, target bitrate, and encoder queue depth (e.g. 6–8 frames for Nvidia NVENC/Apple Silicon to prevent pipeline stalls; 2–3 frames for Snapdragon/mobile to prevent memory exhaustion).
-     - **Cloud Render Disabling / Bypass**: Automatically detects capable local GPUs and can bypass cloud rendering to eliminate network latency and CPU bottlenecks.
-  3. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
+     - Zero dropped frames via active backpressure pacing and quality latency modes on both desktop and mobile devices.
+  2. **Cloud Server Engine (Headless Node.js + FFmpeg)**:
      - Server-side headless rendering utilizing Node.js `@napi-rs/canvas` and `ffmpeg-static` (`ultrafast` / `realtime` presets).
-     - **Hardware Acceleration**: Automatic GPU NVENC hardware encoding detection with multi-threaded CPU fallback (`libx264`).
-     - **Ultra-Fast Cold Start**: Supports `HEADLESS_ONLY=true` to skip Vite bundling in Google Colab, CLI pipelines, and cloud containers.
-     - Generates zero client memory load; ideal for automated worker scripts, Colab, or CI/CD pipelines.
-     - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active or when local GPU is detected, exports are routed through the faster Client GPU engine.
-  4. **Alpha Channel Transparency**:
+     - Generates zero client memory load; suitable for low-spec client hardware or automated worker scripts.
+     - **Automatic Environment Detection**: The application dynamically probes `/api/health`. In environments where Node.js is not active, cloud server rendering is automatically disabled with visual notice, seamlessly routing exports through the Client GPU engine.
+  3. **Alpha Channel Transparency**:
      - Export transparent WebM videos (`libvpx-vp9` with `yuva420p` pixel format) for direct overlay in video editors such as Premiere Pro, DaVinci Resolve, Final Cut, and OBS Studio.
-  5. **PNG Image Sequence (ZIP)**:
+  4. **PNG Image Sequence (ZIP)**:
      - Export full-resolution frame-by-frame PNG sequences zipped in-memory for post-production workflows.
 
 ---
@@ -58,16 +52,14 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [`GET /api/render-progress/:jobId` (Live SSE Telemetry)](#get-apirender-progressjobid)
    - [`GET /api/render-status/:jobId`](#get-apirender-statusjobid)
    - [`GET /api/render-download/:jobId`](#get-apirender-downloadjobid)
-   - [`POST /api/render-cancel/:jobId`](#post-apirender-canceljobid)
    - [`POST /api/render-video` (Direct Headless)](#post-apirender-video)
-   - [`GET /api/hardware-environment`](#get-apihardware-environment)
    - [`GET /api/health`](#get-apihealth)
    - [`GET /api/proxy`](#get-apiproxy)
 4. [API Code Examples](#api-code-examples)
    - [Web Request Workflow (cURL + Browser)](#web-request-workflow-curl--browser)
    - [Direct Headless cURL](#direct-headless-curl)
    - [Node.js Script](#nodejs-script)
-   - [Python Example & Colab Notebook](#python-example)
+   - [Python Script](#python-script)
 5. [Configuration Schema Reference](#configuration-schema-reference)
 6. [Troubleshooting & FAQ](#troubleshooting--faq)
 
@@ -270,21 +262,6 @@ data: {
 
 ---
 
-### `POST /api/render-cancel/:jobId`
-
-Cancels an active render job immediately. If the job is executing on the headless server, the underlying FFmpeg encoding process and frame renderer are terminated without resource leaks. Progress listeners are notified with `status: "canceled"`.
-
-#### Response (`200 OK`)
-```json
-{
-  "success": true,
-  "jobId": "job_1725300000_abc12",
-  "status": "canceled"
-}
-```
-
----
-
 ### `POST /api/render-video` (or `POST /api/render-headless`) (Direct Headless)
 
 Direct synchronous headless video rendering via Node.js Canvas and FFmpeg (`ffmpeg-static`). Supports standard MP4 (H.264) as well as transparent WebM with full alpha channel (`libvpx-vp9` with `yuva420p` pixel format). Enhanced with FFmpeg's `ultrafast` / `realtime` presets to minimize CPU bottlenecks on Colab and cloud instances.
@@ -294,69 +271,6 @@ Direct synchronous headless video rendering via Node.js Canvas and FFmpeg (`ffmp
 
 #### Response
 Streams the finished binary video (`video/mp4` or `video/webm`) as an attachment download, with the `X-Render-Job-Id` header attached for tracking. Alternatively, pass `?format=json` in the query parameters to receive a JSON response containing metadata and a base64 Data URL.
-
----
-
-### `GET /api/hardware-environment`
-
-Inspects the server host environment, container detection, CPU architecture, Google Colab detection, and available GPU hardware acceleration (`h264_nvenc` via system FFmpeg).
-
-#### Response (`200 OK`)
-```json
-{
-  "environment": "colab",
-  "os": "linux",
-  "cpuArch": "x64",
-  "cpuCount": 8,
-  "totalMemoryMb": 16384,
-  "freeMemoryMb": 12150,
-  "isCloud": true,
-  "isColab": true,
-  "gpu": {
-    "hasNvidiaGpu": true,
-    "model": "Tesla T4",
-    "vramMb": 15360,
-    "driverVersion": "535.104.05",
-    "supportsNvenc": true,
-    "activeEncoder": "h264_nvenc",
-    "ffmpegBinary": "/usr/bin/ffmpeg",
-    "nvencPreset": "p1"
-  },
-  "recommendation": "Hardware GPU acceleration active (Tesla T4 via h264_nvenc). Best headless settings (1080p @ 60 FPS) enabled for maximum speed."
-}
-```
-
----
-
-### `GET /api/health`
-
-Health check and capability verification endpoint used by the client UI to verify whether the cloud Node.js server is online.
-
-#### Response (`200 OK`)
-```json
-{
-  "status": "ok",
-  "service": "Waveform Studio Headless Video Generator",
-  "features": {
-    "headlessRendering": true,
-    "mp4Export": true,
-    "transparentAlphaWebm": true,
-    "fftAnalyzer": true,
-    "ffmpegSource": "npm (ffmpeg-static)",
-    "ffmpegBinary": "/path/to/ffmpeg"
-  },
-  "timestamp": "2026-09-08T15:00:00.000Z"
-}
-```
-
----
-
-### `GET /api/proxy`
-
-A built-in CORS proxy for streaming remote audio files or loading artwork directly into the canvas without triggering cross-origin canvas tainting.
-
-#### Query Parameters
-- `url` (required): URL-encoded remote media URL (`https://...`).
 
 ---
 
@@ -537,25 +451,21 @@ generateVisualizerVideo().catch(console.error);
 
 ---
 
-### Python Example &nbsp; [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mnchrmXD/waveform-studio/blob/main/waveform_studio.ipynb)
+### Python Example
 
-Run interactively in Google Colab with the included [`waveform_studio.ipynb`](./waveform_studio.ipynb) notebook featuring automatic Tesla T4/V100/A100 GPU probe, NVENC hardware acceleration, and real-time `tqdm` progress streaming (tracking percentage, frames encoded, rendering FPS, and ETA):
+Using Python's `requests` library (`pip install requests`):
 
 ```python
 import requests
-import threading
-import time
-from tqdm import tqdm
 
-url = "http://localhost:3000/api/render-video?jobId=python_job_1"
+url = "http://localhost:3000/api/render-video"
 
 payload = {
-    "jobId": "python_job_1",
     "audio": "https://cdn.freesound.org/previews/612/612627_11861866-lq.mp3",
     "video": {
         "width": 1920,
         "height": 1080,
-        "fps": 60,
+        "fps": 30,
         "format": "mp4"
     },
     "settings": {
@@ -567,38 +477,17 @@ payload = {
     "theme": "emerald-mint"
 }
 
-# Run render request in background thread while tracking live progress bar
-render_resp = [None]
-t = threading.Thread(target=lambda: render_resp.__setitem__(0, requests.post(url, json=payload, stream=True)))
-t.daemon = True
-t.start()
+print("Submitting render job...")
+response = requests.post(url, json=payload, stream=True)
 
-with tqdm(total=100, desc="🎨 Rendering Video", unit="%", bar_format="{l_bar}{bar}| {n:.0f}% [{elapsed}<{remaining}] {postfix}") as pbar:
-    last_pct = 0
-    while t.is_alive():
-        try:
-            st = requests.get("http://localhost:3000/api/render-status/python_job_1", timeout=0.8).json()
-            pct = int(st.get('progress', 0))
-            if pct > last_pct:
-                pbar.update(pct - last_pct)
-                last_pct = pct
-            pbar.set_postfix({
-                'frames': f"{st.get('currentFrame', 0)}/{st.get('totalFrames', 0)}",
-                'speed': f"{st.get('fps', 0)}fps"
-            })
-            if st.get('status') == 'completed':
-                break
-        except Exception:
-            pass
-        time.sleep(0.15)
-    t.join()
-
-if render_resp[0] and render_resp[0].status_code == 200:
-    with open("waveform_render.mp4", "wb") as f:
-        for chunk in render_resp[0].iter_content(chunk_size=1024 * 1024):
+if response.status_code == 200:
+    with open("python_render.mp4", "wb") as f:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
             if chunk:
                 f.write(chunk)
-    print("\n🎉 Video saved to waveform_render.mp4")
+    print("Render succeeded! File saved to python_render.mp4")
+else:
+    print(f"Error {response.status_code}: {response.text}")
 ```
 
 ---
