@@ -62,6 +62,7 @@ A full-stack, studio-grade audio visualizer and video generation suite. Create r
    - [Python Script](#python-script)
 5. [Configuration Schema Reference](#configuration-schema-reference)
 6. [Troubleshooting & FAQ](#troubleshooting--faq)
+7. [Architecture & Agent Methodology Guide (AGENTS.md)](#architecture--agent-methodology-guide)
 
 ---
 
@@ -578,3 +579,16 @@ else:
 
 ### 5. Running in a static web hosting environment without Node.js
 - The web application features automated environment detection. When deployed to a static host (GitHub Pages, Vercel static, S3/CloudFront), the Cloud Server option is automatically disabled, and video exports proceed using the client GPU (WebCodecs / MediaRecorder) with zero server dependencies.
+
+---
+
+## Architecture & Agent Methodology Guide
+
+For an in-depth, versioned architectural guide covering:
+- Dual-engine rendering methodology (Client GPU WebCodecs vs. Cloud Server FFmpeg)
+- Alpha channel transparency mechanics (`yuva420p`, `alpha: 'keep'`, `-auto-alt-ref 0`)
+- Visualizer geometry algorithms and mathematical tapering curves
+- Cooley-Tukey Radix-2 offline FFT analysis and deterministic time-stepping
+- REST API architectures and live SSE telemetry streaming
+
+Refer to [`AGENTS.md`](./AGENTS.md).
